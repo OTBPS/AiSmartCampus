@@ -4,6 +4,28 @@
     <template v-if="!amapReady">
       <div class="map-road main"></div>
       <div class="map-road cross"></div>
+      <svg v-if="routeLine" class="route-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line
+          :x1="routeLine.from.x"
+          :y1="routeLine.from.y"
+          :x2="routeLine.to.x"
+          :y2="routeLine.to.y"
+        />
+      </svg>
+      <span
+        v-if="routeLine"
+        class="route-endpoint start"
+        :style="{ left: `${routeLine.from.x}%`, top: `${routeLine.from.y}%` }"
+      >
+        起
+      </span>
+      <span
+        v-if="routeLine"
+        class="route-endpoint end"
+        :style="{ left: `${routeLine.to.x}%`, top: `${routeLine.to.y}%` }"
+      >
+        终
+      </span>
       <button
         v-for="poi in normalizedPois"
         :key="poi.id"
@@ -34,7 +56,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 const props = defineProps({
   pois: { type: Array, default: () => [] },
   highlightedIds: { type: Array, default: () => [] },
-  selectedPoiId: { type: Number, default: null }
+  selectedPoiId: { type: Number, default: null },
+  routeAction: { type: Object, default: null }
 })
 
 const emit = defineEmits(['select'])
@@ -60,6 +83,15 @@ const normalizedPois = computed(() => {
       y: 82 - ((Number(poi.latitude) - minLat) / latRange) * 64
     }
   })
+})
+
+const routeLine = computed(() => {
+  const ids = props.routeAction?.poiIds || []
+  if (ids.length < 2) return null
+  const from = normalizedPois.value.find((poi) => poi.id === ids[0])
+  const to = normalizedPois.value.find((poi) => poi.id === ids[ids.length - 1])
+  if (!from || !to) return null
+  return { from, to }
 })
 
 onMounted(() => {
@@ -113,4 +145,3 @@ function categoryInitial(category) {
   return map[category] || '点'
 }
 </script>
-

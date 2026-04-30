@@ -30,6 +30,25 @@
 
           <div v-if="lastResponse" class="result-list">
             <el-alert :title="`识别意图：${lastResponse.intent}`" type="success" :closable="false" />
+            <div class="ai-action-board">
+              <div>
+                <strong>地图动作</strong>
+                <div class="action-tags">
+                  <el-tag v-for="action in mapActions" :key="action.key" size="small" effect="plain">
+                    {{ action.label }}
+                  </el-tag>
+                </div>
+              </div>
+              <div>
+                <strong>工具调用</strong>
+                <div class="action-tags">
+                  <el-tag v-for="tool in toolCalls" :key="tool.key" size="small" type="info" effect="plain">
+                    {{ tool.label }}
+                  </el-tag>
+                </div>
+              </div>
+              <p v-if="routeSummary" class="route-summary">{{ routeSummary }}</p>
+            </div>
             <button
               v-for="poi in resultPois"
               :key="poi.id"
@@ -57,6 +76,7 @@
           :pois="pois"
           :highlighted-ids="highlightedIds"
           :selected-poi-id="selectedPoi?.id"
+          :route-action="routeAction"
           @select="selectPoi"
         />
         <section v-if="selectedPoi" class="panel detail-panel">
@@ -64,6 +84,7 @@
             <h3>{{ selectedPoi.name }}</h3>
             <p>{{ selectedPoi.locationText }} · {{ selectedPoi.openStatus }} · {{ selectedPoi.tags }}</p>
             <p>{{ selectedPoi.remark }}</p>
+            <p v-if="aiContextNote" class="ai-context-note">{{ aiContextNote }}</p>
           </div>
           <div>
             <el-button type="primary" @click="feedbackVisible = true">提交地点反馈</el-button>
@@ -115,6 +136,29 @@ const messages = ref([
 
 const quickPrompts = ['找图书馆', '找打印店', '找一个安静有插座的自习点', '从宿舍 A 区去图书馆三楼自习区']
 const resultPois = computed(() => lastResponse.value?.pois || [])
+const routeAction = computed(() => lastResponse.value?.mapActions?.find((item) => item.type === 'draw_route') || null)
+const mapActions = computed(() => (lastResponse.value?.mapActions || []).map((action, index) => ({
+  key: `${action.type}-${index}`,
+  label: mapActionLabel(action)
+})))
+const toolCalls = computed(() => (lastResponse.value?.toolCalls || []).map((tool, index) => ({
+  key: `${tool.tool}-${index}`,
+  label: toolCallLabel(tool)
+})))
+const routeSummary = computed(() => {
+  if (!routeAction.value) return ''
+  const payload = routeAction.value.payload || {}
+  const from = payload.from || routePoiName(0) || '起点'
+  const to = payload.to || routePoiName((routeAction.value.poiIds?.length || 1) - 1) || '终点'
+  const reason = payload.reason || '普通路线兜底'
+  return `路线说明：${from} → ${to}，${reason}`
+})
+const aiContextNote = computed(() => {
+  if (!lastResponse.value) return ''
+  if (routeSummary.value) return routeSummary.value
+  if (lastResponse.value.intent === 'recommend_place') return `推荐理由：${lastResponse.value.reply}`
+  return `AI 动作：${lastResponse.value.reply}`
+})
 
 onMounted(loadPois)
 
@@ -180,5 +224,24 @@ async function submitFeedback() {
   ElMessage.success('反馈已提交，等待管理员审核')
   feedback.content = ''
   feedbackVisible.value = false
+}
+
+function mapActionLabel(action) {
+  if (action.type === 'highlight_pois') return `高亮 ${action.poiIds?.length || 0} 个地点`
+  if (action.type === 'open_poi_detail') return `打开详情 #${action.poiId}`
+  if (action.type === 'draw_route') return `绘制路线 ${action.routeMode || 'fallback'}`
+  return action.type
+}
+
+function toolCallLabel(tool) {
+  if (tool.tool === 'searchPoi') return `searchPoi(${tool.arguments?.keyword || ''})`
+  if (tool.tool === 'searchPoiByTags') return `searchPoiByTags`
+  if (tool.tool === 'planCampusRouteFallback') return `planCampusRouteFallback`
+  return tool.tool
+}
+
+function routePoiName(index) {
+  const id = routeAction.value?.poiIds?.[index]
+  return resultPois.value.find((poi) => poi.id === id)?.name || pois.value.find((poi) => poi.id === id)?.name
 }
 </script>
