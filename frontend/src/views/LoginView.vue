@@ -1,7 +1,10 @@
 <template>
   <div class="auth-page">
     <section class="auth-hero">
-      <h1>SmartCampusNavigation</h1>
+      <h1>
+        <span>SmartCampus</span>
+        <span>Navigation</span>
+      </h1>
       <p>围绕 AI 地图交互、自建校园 POI 数据和反馈修正闭环构建的智慧校园导航第一版演示系统。</p>
     </section>
     <section class="auth-panel">
@@ -72,4 +75,3 @@ async function submit() {
   }
 }
 </script>
-
