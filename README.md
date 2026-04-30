@@ -34,6 +34,12 @@ cd backend
 mvn spring-boot:run
 ```
 
+The backend runs on:
+
+```text
+http://localhost:8000
+```
+
 4. Start frontend:
 
 ```powershell
@@ -50,4 +56,3 @@ Default seed users:
 ## Git Flow
 
 Development should happen on `develop`; keep `main` stable for milestone demos.
-

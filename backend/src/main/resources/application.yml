@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:8000}
 
 spring:
   application:
@@ -20,4 +20,3 @@ app:
   jwt:
     secret: ${JWT_SECRET:change-this-local-development-secret-at-least-32-bytes}
     ttl-minutes: ${JWT_TTL_MINUTES:720}
-
