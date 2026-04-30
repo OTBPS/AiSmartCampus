@@ -219,6 +219,7 @@ a {
   display: grid;
   grid-template-columns: 390px minmax(0, 1fr);
   gap: 18px;
+  height: calc(100vh - 126px);
   min-height: calc(100vh - 104px);
 }
 
@@ -233,6 +234,8 @@ a {
 .ai-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  max-height: 100%;
   overflow: hidden;
 }
 
@@ -266,7 +269,10 @@ a {
 }
 
 .messages {
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-top: 1px solid var(--scn-line);
   border-bottom: 1px solid var(--scn-line);
   padding: 14px;
