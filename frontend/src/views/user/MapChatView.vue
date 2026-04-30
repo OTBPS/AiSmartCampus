@@ -144,8 +144,12 @@ function applyMapActions(response) {
   const highlight = response.mapActions?.find((item) => item.type === 'highlight_pois')
   highlightedIds.value = highlight?.poiIds || []
   const open = response.mapActions?.find((item) => item.type === 'open_poi_detail')
+  const route = response.mapActions?.find((item) => item.type === 'draw_route')
   if (open?.poiId) {
     selectedPoi.value = pois.value.find((item) => item.id === open.poiId) || response.pois?.[0] || selectedPoi.value
+  } else if (route?.poiIds?.length) {
+    const destinationId = route.poiIds[route.poiIds.length - 1]
+    selectedPoi.value = pois.value.find((item) => item.id === destinationId) || response.pois?.[response.pois.length - 1] || selectedPoi.value
   } else if (response.pois?.length) {
     selectedPoi.value = response.pois[0]
   }
@@ -178,4 +182,3 @@ async function submitFeedback() {
   feedbackVisible.value = false
 }
 </script>
-

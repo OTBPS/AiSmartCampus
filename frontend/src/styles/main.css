@@ -468,6 +468,21 @@ a {
   box-shadow: var(--scn-soft-shadow);
 }
 
+.feedback-poi-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.feedback-poi-cell span,
+.review-content {
+  color: var(--scn-muted);
+  line-height: 1.5;
+}
+
+.review-content {
+  margin: 12px 0 16px;
+}
+
 .el-input__wrapper,
 .el-textarea__inner,
 .el-button,

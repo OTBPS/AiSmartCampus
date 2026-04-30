@@ -66,6 +66,21 @@ public class PoiService {
         return get(id);
     }
 
+    public PoiEntity updateStatusAndRemark(Long id, String status, String remark, Boolean enabled) {
+        PoiEntity entity = get(id);
+        if (StringUtils.hasText(status)) {
+            entity.openStatus = status;
+        }
+        if (StringUtils.hasText(remark)) {
+            entity.remark = remark;
+        }
+        if (enabled != null) {
+            entity.enabled = enabled;
+        }
+        poiMapper.updateById(entity);
+        return get(id);
+    }
+
     private void apply(PoiEntity entity, PoiRequest request) {
         entity.name = request.name;
         entity.category = request.category;
@@ -79,4 +94,3 @@ public class PoiService {
         entity.enabled = request.enabled == null || request.enabled;
     }
 }
-

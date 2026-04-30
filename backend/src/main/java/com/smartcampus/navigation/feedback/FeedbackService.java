@@ -52,10 +52,10 @@ public class FeedbackService {
         entity.reviewNote = request.reviewNote == null ? "" : request.reviewNote;
         entity.reviewedAt = LocalDateTime.now();
         feedbackMapper.updateById(entity);
-        if ("APPROVED".equals(request.status) && entity.poiId != null && StringUtils.hasText(request.poiOpenStatus)) {
-            poiService.updateStatus(entity.poiId, request.poiOpenStatus, null);
+        if ("APPROVED".equals(request.status) && entity.poiId != null
+                && (StringUtils.hasText(request.poiOpenStatus) || StringUtils.hasText(request.poiRemark))) {
+            poiService.updateStatusAndRemark(entity.poiId, request.poiOpenStatus, request.poiRemark, null);
         }
         return feedbackMapper.selectById(id);
     }
 }
-

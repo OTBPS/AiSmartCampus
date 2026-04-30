@@ -18,6 +18,7 @@ SmartCampusNavigation is a first-version demo for an AI-assisted smart campus na
 ## Local Run
 
 1. Create MySQL database and import `sql/schema.sql`.
+   - If the database already exists and you only want to add the second-stage demo POIs, run `sql/seed_stage2.sql` instead of resetting the schema.
 2. Configure environment variables:
 
 ```powershell
@@ -52,6 +53,28 @@ Default seed users:
 
 - User: `student` / `123456`
 - Admin: `admin` / `123456`
+
+Frontend runs on:
+
+```text
+http://localhost:5173/login
+```
+
+## Demo Script
+
+Use this sequence for the first milestone demo:
+
+1. Log in as `student / 123456`.
+2. Open the AI map workbench and ask: `找一个安静有插座的自习点`.
+3. Confirm the result list, map highlight, and POI detail panel update together.
+4. Ask: `找打印店`; the result should focus on print/copy service POIs.
+5. Ask: `从宿舍 A 区去图书馆三楼自习区`; the mock AI should identify route intent and highlight the origin/destination.
+6. Open a POI detail and submit feedback, for example: `打印店周末下午也营业，需要补充备注。`
+7. Log in as `admin / 123456`.
+8. Open feedback review, approve the pending feedback, and sync the generated POI remark.
+9. Return to the user map page and confirm the POI detail remark changed.
+
+The demo should emphasize the closed loop: self-managed POI data, AI map actions, user feedback, admin review, and visible POI correction.
 
 ## Git Flow
 

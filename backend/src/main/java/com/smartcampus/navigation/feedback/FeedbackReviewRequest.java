@@ -7,5 +7,5 @@ public class FeedbackReviewRequest {
     public String status;
     public String reviewNote = "";
     public String poiOpenStatus;
+    public String poiRemark;
 }
-

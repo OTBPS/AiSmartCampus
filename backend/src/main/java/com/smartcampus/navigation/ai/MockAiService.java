@@ -6,6 +6,7 @@ import com.smartcampus.navigation.common.BizException;
 import com.smartcampus.navigation.poi.PoiEntity;
 import com.smartcampus.navigation.poi.PoiService;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -50,11 +51,11 @@ public class MockAiService {
     }
 
     private AiChatResponse buildResponse(String message) {
-        String normalized = message == null ? "" : message.toLowerCase(Locale.ROOT);
-        if (normalized.contains("从") && normalized.contains("去")) {
+        String normalized = normalizeText(message);
+        if (isRouteQuestion(normalized)) {
             return routeHelp(message);
         }
-        if (containsAny(normalized, "安静", "插座", "自习", "推荐", "少淋雨", "遮蔽")) {
+        if (isRecommendationQuestion(normalized)) {
             return recommendPlace(message);
         }
         return findPoi(message);
@@ -76,22 +77,21 @@ public class MockAiService {
     }
 
     private AiChatResponse recommendPlace(String message) {
-        List<String> tags = new ArrayList<>();
-        if (message.contains("安静") || message.contains("自习")) {
-            tags.add("安静");
-        }
-        if (message.contains("插座")) {
-            tags.add("有插座");
-        }
-        if (message.contains("淋雨") || message.contains("遮蔽")) {
-            tags.add("遮蔽");
-        }
+        String normalized = normalizeText(message);
+        List<String> tags = extractPreferenceTags(normalized);
         String tag = tags.isEmpty() ? "自习" : tags.get(0);
-        List<PoiEntity> pois = poiService.list(null, null, tag, true);
+        List<PoiEntity> pois = poiService.list(null, null, null, true).stream()
+                .filter(poi -> matchesRecommendation(poi, tags, normalized))
+                .sorted(Comparator.comparingInt((PoiEntity poi) -> scoreRecommendation(poi, tags, normalized)).reversed())
+                .limit(4)
+                .toList();
         if (pois.isEmpty()) {
-            pois = poiService.list(null, "STUDY", null, true);
+            pois = poiService.list(null, null, tag, true);
         }
-        AiChatResponse response = base("recommend_place", "我优先根据地点标签和校园场景约束筛选候选地点，推荐结果已同步到地图。", pois);
+        if (pois.isEmpty()) {
+            pois = poiService.list(null, "STUDY", null, true).stream().limit(4).toList();
+        }
+        AiChatResponse response = base("recommend_place", "我已按安静、自习、插座、雨天遮蔽等校园场景标签筛选候选地点，推荐结果已同步到地图。", pois);
         response.toolCalls.add(new AiChatResponse.ToolCall("searchPoiByTags", Map.of("tags", tags)));
         response.mapActions.add(highlight(pois));
         if (!pois.isEmpty()) {
@@ -102,11 +102,13 @@ public class MockAiService {
 
     private AiChatResponse routeHelp(String message) {
         List<PoiEntity> all = poiService.list(null, null, null, true);
-        List<PoiEntity> matched = all.stream().filter(poi -> message.contains(poi.name)).toList();
+        List<PoiEntity> matched = matchPoisInMessage(message, all);
         if (matched.size() < 2) {
             matched = all.stream().limit(2).toList();
         }
-        AiChatResponse response = base("route_help", "我已识别起终点并准备触发普通路线兜底。第一版不做复杂路线优化，但会保留推荐理由和地点上下文。", matched);
+        String from = matched.isEmpty() ? "起点" : matched.get(0).name;
+        String to = matched.size() < 2 ? "终点" : matched.get(1).name;
+        AiChatResponse response = base("route_help", "我已识别从 " + from + " 到 " + to + " 的路线意图，并准备触发普通路线兜底。第一版不做复杂路线优化，但会保留地点上下文。", matched);
         List<Long> ids = matched.stream().map(poi -> poi.id).toList();
         response.toolCalls.add(new AiChatResponse.ToolCall("planCampusRouteFallback", Map.of("poiIds", ids)));
         AiChatResponse.MapAction action = new AiChatResponse.MapAction("draw_route");
@@ -114,8 +116,13 @@ public class MockAiService {
         action.routeMode = "AMAP_FALLBACK";
         action.payload = new LinkedHashMap<>();
         action.payload.put("reason", "普通路线兜底");
+        action.payload.put("from", from);
+        action.payload.put("to", to);
         response.mapActions.add(action);
         response.mapActions.add(highlight(matched));
+        if (matched.size() > 1) {
+            response.mapActions.add(openDetail(matched.get(1).id));
+        }
         return response;
     }
 
@@ -148,23 +155,131 @@ public class MockAiService {
         return false;
     }
 
+    private boolean isRouteQuestion(String normalized) {
+        return (normalized.contains("从") && (normalized.contains("去") || normalized.contains("到")))
+                || normalized.contains("路线")
+                || normalized.contains("怎么走");
+    }
+
+    private boolean isRecommendationQuestion(String normalized) {
+        return containsAny(normalized, "推荐", "安静", "插座", "自习", "学习", "少淋雨", "淋雨", "遮蔽", "夜间", "雨天友好");
+    }
+
+    private List<String> extractPreferenceTags(String normalized) {
+        List<String> tags = new ArrayList<>();
+        if (containsAny(normalized, "安静", "自习", "学习")) {
+            tags.add("安静");
+        }
+        if (normalized.contains("插座")) {
+            tags.add("有插座");
+        }
+        if (containsAny(normalized, "淋雨", "遮蔽", "雨天")) {
+            tags.add("遮蔽");
+        }
+        if (normalized.contains("夜间")) {
+            tags.add("夜间可达");
+        }
+        if (normalized.contains("打印")) {
+            tags.add("打印");
+        }
+        if (normalized.contains("食堂") || normalized.contains("吃饭")) {
+            tags.add("就餐");
+        }
+        return tags;
+    }
+
+    private boolean matchesRecommendation(PoiEntity poi, List<String> tags, String normalized) {
+        if (tags.isEmpty()) {
+            return "STUDY".equals(poi.category) || containsAny(poi.tags, "自习", "安静");
+        }
+        int score = scoreRecommendation(poi, tags, normalized);
+        return score > 0;
+    }
+
+    private int scoreRecommendation(PoiEntity poi, List<String> tags, String normalized) {
+        int score = 0;
+        String text = normalizeText(poi.name + "," + poi.category + "," + poi.locationText + "," + poi.tags + "," + poi.remark);
+        for (String tag : tags) {
+            if (text.contains(normalizeText(tag))) {
+                score += 3;
+            }
+        }
+        if (containsAny(normalized, "自习", "学习", "安静") && "STUDY".equals(poi.category)) {
+            score += 2;
+        }
+        if (containsAny(normalized, "少淋雨", "雨天", "遮蔽") && Boolean.TRUE.equals(poi.sheltered)) {
+            score += 2;
+        }
+        if (normalized.contains("打印") && containsAny(text, "打印", "复印")) {
+            score += 2;
+        }
+        return score;
+    }
+
+    private List<PoiEntity> matchPoisInMessage(String message, List<PoiEntity> candidates) {
+        String normalized = normalizeText(message);
+        List<PoiEntity> matched = new ArrayList<>(candidates.stream()
+                .filter(poi -> normalized.contains(normalizeText(poi.name)))
+                .sorted(Comparator.comparingInt(poi -> normalized.indexOf(normalizeText(poi.name))))
+                .toList());
+        Map<String, String> aliases = Map.ofEntries(
+                Map.entry("宿舍a区", "宿舍 A 区"),
+                Map.entry("宿舍A区", "宿舍 A 区"),
+                Map.entry("宿舍", "宿舍"),
+                Map.entry("图书馆", "图书馆"),
+                Map.entry("自习区", "自习"),
+                Map.entry("教学楼", "教学楼"),
+                Map.entry("打印店", "打印"),
+                Map.entry("食堂", "食堂"),
+                Map.entry("校医院", "校医院")
+        );
+        for (Map.Entry<String, String> entry : aliases.entrySet()) {
+            if (normalized.contains(normalizeText(entry.getKey()))) {
+                candidates.stream()
+                        .filter(poi -> normalizeText(poi.name + poi.tags).contains(normalizeText(entry.getValue())))
+                        .findFirst()
+                        .ifPresent(poi -> {
+                            if (matched.stream().noneMatch(item -> item.id.equals(poi.id))) {
+                                matched.add(poi);
+                            }
+                        });
+            }
+        }
+        return matched.stream().limit(2).toList();
+    }
+
+    private String normalizeText(String text) {
+        return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+    }
+
     private String extractKeyword(String message) {
         if (message == null || message.isBlank()) {
             return "";
         }
-        Map<String, String> aliases = Map.of(
-                "图书馆", "图书馆",
-                "食堂", "食堂",
-                "打印", "打印",
-                "校医院", "校医院",
-                "教学楼", "教学楼",
-                "宿舍", "宿舍"
+        Map<String, String> aliases = Map.ofEntries(
+                Map.entry("图书馆", "图书馆"),
+                Map.entry("自习", "自习"),
+                Map.entry("学习", "自习"),
+                Map.entry("食堂", "食堂"),
+                Map.entry("餐厅", "餐厅"),
+                Map.entry("打印", "打印"),
+                Map.entry("复印", "打印"),
+                Map.entry("校医院", "校医院"),
+                Map.entry("医院", "医院"),
+                Map.entry("教学楼", "教学楼"),
+                Map.entry("教室", "教学楼"),
+                Map.entry("实验楼", "实验楼"),
+                Map.entry("宿舍", "宿舍"),
+                Map.entry("快递", "快递"),
+                Map.entry("行政", "行政"),
+                Map.entry("服务中心", "服务中心"),
+                Map.entry("体育馆", "体育馆")
         );
         for (Map.Entry<String, String> entry : aliases.entrySet()) {
             if (message.contains(entry.getKey())) {
                 return entry.getValue();
             }
         }
-        return message.replace("找", "").replace("哪里", "").trim();
+        return message.replace("找", "").replace("哪里", "").replace("在哪", "").trim();
     }
 }
