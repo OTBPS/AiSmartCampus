@@ -2,8 +2,8 @@
   <AppShell>
     <div class="page-head">
       <div>
-        <h1>个人中心</h1>
-        <p>第一版只保留用户信息和反馈记录，避免偏离 AI 地图主线。</p>
+        <h1>{{ $t('profile.title') }}</h1>
+        <p>{{ $t('profile.subtitle') }}</p>
       </div>
     </div>
 
@@ -13,11 +13,15 @@
         <span>{{ auth.user?.username }} · {{ auth.user?.role }}</span>
       </section>
       <section class="table-panel">
-        <h3>我的反馈</h3>
+        <h3>{{ $t('profile.myFeedback') }}</h3>
         <el-table :data="feedback" height="420">
-          <el-table-column prop="type" label="类型" width="140" />
-          <el-table-column prop="content" label="内容" />
-          <el-table-column prop="status" label="状态" width="120" />
+          <el-table-column prop="type" :label="$t('common.type')" width="140" />
+          <el-table-column prop="content" :label="$t('common.content')" />
+          <el-table-column :label="$t('common.status')" width="120">
+            <template #default="{ row }">
+              {{ feedbackStatusLabel(row.status) }}
+            </template>
+          </el-table-column>
         </el-table>
       </section>
     </div>
@@ -26,14 +30,23 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
 import { feedbackApi } from '../../api/modules'
 import { useAuthStore } from '../../stores/auth'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const feedback = ref([])
 onMounted(async () => {
   feedback.value = await feedbackApi.mine()
 })
-</script>
 
+function feedbackStatusLabel(status) {
+  return {
+    PENDING: t('common.pending'),
+    APPROVED: t('common.approved'),
+    REJECTED: t('common.rejected')
+  }[status] || status
+}
+</script>

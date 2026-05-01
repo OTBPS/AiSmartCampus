@@ -20,5 +20,6 @@ public class PoiRequest {
     public Boolean sheltered = false;
     public String remark = "";
     public Boolean enabled = true;
+    public Integer mapRank;
+    public String sourceUrl = "";
 }
-

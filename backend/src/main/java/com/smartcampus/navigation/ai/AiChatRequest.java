@@ -5,5 +5,5 @@ import jakarta.validation.constraints.NotBlank;
 public class AiChatRequest {
     @NotBlank
     public String message;
+    public String locale;
 }
-

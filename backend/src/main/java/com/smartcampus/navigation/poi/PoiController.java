@@ -26,9 +26,11 @@ public class PoiController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String tag,
-            @RequestParam(defaultValue = "true") Boolean enabledOnly
+            @RequestParam(defaultValue = "true") Boolean enabledOnly,
+            @RequestParam(defaultValue = "false") Boolean mapOnly,
+            @RequestParam(required = false) Integer limit
     ) {
-        return ApiResponse.ok(poiService.list(keyword, category, tag, enabledOnly));
+        return ApiResponse.ok(poiService.list(keyword, category, tag, enabledOnly, mapOnly, limit));
     }
 
     @GetMapping("/{id}")
@@ -56,4 +58,3 @@ public class PoiController {
         public Boolean enabled;
     }
 }
-

@@ -15,9 +15,16 @@ public class PoiService {
     }
 
     public List<PoiEntity> list(String keyword, String category, String tag, Boolean enabledOnly) {
+        return list(keyword, category, tag, enabledOnly, false, null);
+    }
+
+    public List<PoiEntity> list(String keyword, String category, String tag, Boolean enabledOnly, Boolean mapOnly, Integer limit) {
         QueryWrapper<PoiEntity> wrapper = new QueryWrapper<>();
         if (Boolean.TRUE.equals(enabledOnly)) {
             wrapper.eq("enabled", true);
+        }
+        if (Boolean.TRUE.equals(mapOnly)) {
+            wrapper.isNotNull("map_rank");
         }
         if (StringUtils.hasText(category)) {
             wrapper.eq("category", category);
@@ -28,7 +35,14 @@ public class PoiService {
         if (StringUtils.hasText(keyword)) {
             wrapper.and(w -> w.like("name", keyword).or().like("location_text", keyword).or().like("tags", keyword));
         }
-        wrapper.orderByAsc("category").orderByDesc("updated_at");
+        if (Boolean.TRUE.equals(mapOnly)) {
+            wrapper.orderByAsc("map_rank");
+        } else {
+            wrapper.orderByAsc("category").orderByDesc("updated_at");
+        }
+        if (limit != null && limit > 0) {
+            wrapper.last("LIMIT " + Math.min(limit, 100));
+        }
         return poiMapper.selectList(wrapper);
     }
 
@@ -92,5 +106,7 @@ public class PoiService {
         entity.sheltered = Boolean.TRUE.equals(request.sheltered);
         entity.remark = request.remark == null ? "" : request.remark;
         entity.enabled = request.enabled == null || request.enabled;
+        entity.mapRank = request.mapRank;
+        entity.sourceUrl = request.sourceUrl == null ? "" : request.sourceUrl;
     }
 }

@@ -2,10 +2,10 @@
   <AppShell>
     <div class="page-head">
       <div>
-        <h1>校园地点经验</h1>
-        <p>发现页只沉淀地点与路线经验，不做泛论坛内容。</p>
+        <h1>{{ $t('discover.title') }}</h1>
+        <p>{{ $t('discover.subtitle') }}</p>
       </div>
-      <el-button type="primary" @click="load">刷新</el-button>
+      <el-button type="primary" @click="load">{{ $t('common.refresh') }}</el-button>
     </div>
 
     <div class="card-grid">
@@ -13,7 +13,7 @@
         <el-tag size="small">{{ post.category }}</el-tag>
         <h3>{{ post.title }}</h3>
         <p>{{ post.summary }}</p>
-        <el-button v-if="post.poiId" link type="primary" @click="$router.push('/map-chat')">回到地图查看地点</el-button>
+        <el-button v-if="post.poiId" link type="primary" @click="$router.push('/map-chat')">{{ $t('discover.backToMap') }}</el-button>
       </article>
     </div>
   </AppShell>
@@ -31,4 +31,3 @@ async function load() {
   posts.value = await discoverApi.posts()
 }
 </script>
-

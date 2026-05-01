@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Spring Boot",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "mvn.cmd -f backend\\pom.xml spring-boot:run",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "DB_URL": "jdbc:mysql://localhost:3306/smart_campus_navigation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai",
+        "DB_USERNAME": "root",
+        "DB_PASSWORD": "replace-with-local-mysql-password",
+        "JWT_SECRET": "change-this-local-development-secret-at-least-32-bytes",
+        "AI_PROVIDER": "mock"
+      }
+    },
+    {
+      "name": "Frontend: Vite",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm.cmd --prefix frontend run dev",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Start SmartCampusNavigation",
+      "configurations": [
+        "Backend: Spring Boot",
+        "Frontend: Vite"
+      ],
+      "stopAll": true
+    }
+  ]
+}

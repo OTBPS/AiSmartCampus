@@ -29,8 +29,8 @@ class MockAiServiceTest {
 
     @Test
     void recommendQuietStudyPlaceHighlightsTaggedPoi() {
-        PoiEntity study = poi(1L, "图书馆三楼自习区", "STUDY", "安静,有插座,自习,遮蔽", true);
-        PoiEntity printer = poi(2L, "校园打印店", "SERVICE", "打印,复印,服务", true);
+        PoiEntity study = poi(1L, "NUIST Library Study Area", "STUDY", "library,quiet,outlets,study,sheltered", true);
+        PoiEntity printer = poi(2L, "Campus Print Shop", "SERVICE", "print,copy,service", true);
         PoiService poiService = mock(PoiService.class);
         when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(study, printer));
 
@@ -43,9 +43,9 @@ class MockAiServiceTest {
 
     @Test
     void findPrinterUsesPoiSearchKeyword() {
-        PoiEntity printer = poi(9L, "校园打印店", "SERVICE", "打印,复印,服务", true);
+        PoiEntity printer = poi(9L, "Campus Print Shop", "SERVICE", "print,copy,service", true);
         PoiService poiService = mock(PoiService.class);
-        when(poiService.list(eq("打印"), eq(null), eq(null), eq(true))).thenReturn(List.of(printer));
+        when(poiService.list(eq("print"), eq(null), eq(null), eq(true))).thenReturn(List.of(printer));
 
         AiChatResponse response = service(poiService).preview("找打印店");
 
@@ -56,17 +56,30 @@ class MockAiServiceTest {
 
     @Test
     void routeHelpKeepsOriginAndDestinationOrder() {
-        PoiEntity dorm = poi(7L, "宿舍 A 区", "DORM", "宿舍,生活区,夜间可达", false);
-        PoiEntity library = poi(1L, "图书馆三楼自习区", "STUDY", "安静,有插座,自习,遮蔽", true);
+        PoiEntity dorm = poi(7L, "Xiyuan Dormitory Area", "DORM", "dorm,dormitory,living-area,night-access,xiyuan", false);
+        PoiEntity library = poi(1L, "NUIST Library Study Area", "STUDY", "library,quiet,outlets,study,sheltered", true);
         PoiService poiService = mock(PoiService.class);
         when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(library, dorm));
 
-        AiChatResponse response = service(poiService).preview("从宿舍 A 区去图书馆三楼自习区");
+        AiChatResponse response = service(poiService).preview("从西苑宿舍去图书馆");
 
         assertEquals("route_help", response.intent);
         assertEquals(List.of(dorm, library), response.pois);
         assertEquals("draw_route", response.mapActions.get(0).type);
         assertEquals(List.of(7L, 1L), response.mapActions.get(0).poiIds);
+    }
+
+    @Test
+    void englishLocaleReturnsEnglishReplyAndKeepsStructuredActions() {
+        PoiEntity study = poi(1L, "NUIST Library Study Area", "STUDY", "library,quiet,outlets,study,sheltered", true);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(study));
+
+        AiChatResponse response = service(poiService).preview("Find a quiet study place with outlets", "en-US");
+
+        assertEquals("recommend_place", response.intent);
+        assertTrue(response.reply.contains("candidate places"));
+        assertEquals("highlight_pois", response.mapActions.get(0).type);
     }
 
     private MockAiService service(PoiService poiService) {

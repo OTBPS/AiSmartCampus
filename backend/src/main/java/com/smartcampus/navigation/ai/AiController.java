@@ -13,20 +13,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/ai")
 public class AiController {
-    private final MockAiService mockAiService;
+    private final AiChatService aiChatService;
 
-    public AiController(MockAiService mockAiService) {
-        this.mockAiService = mockAiService;
+    public AiController(AiChatService aiChatService) {
+        this.aiChatService = aiChatService;
     }
 
     @PostMapping("/chat")
     public ApiResponse<AiChatResponse> chat(@Valid @RequestBody AiChatRequest request) {
-        return ApiResponse.ok(mockAiService.chat(SecurityUsers.current().id(), request.message));
+        return ApiResponse.ok(aiChatService.chat(SecurityUsers.current().id(), request.message, request.locale));
     }
 
     @GetMapping("/admin/logs")
     public ApiResponse<List<AiMessageEntity>> logs() {
-        return ApiResponse.ok(mockAiService.logs());
+        return ApiResponse.ok(aiChatService.logs());
     }
 }
-

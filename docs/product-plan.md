@@ -1,10 +1,10 @@
-# SmartCampusNavigation First Version
+# SmartCampusNavigation Second Version
 
 ## Positioning
 
-The system focuses on AI map interaction, self-managed campus POI data, and a feedback correction loop. Discovery content and profile pages stay secondary.
+The system focuses on AI map interaction, self-managed NUIST POI data, a real-map fallback strategy, and a feedback correction loop. Discovery content and profile pages stay secondary.
 
-## First Version Scope
+## Baseline Scope
 
 - User login and role-based access.
 - AI map workbench as the user homepage.
@@ -13,13 +13,14 @@ The system focuses on AI map interaction, self-managed campus POI data, and a fe
 - Feedback submission from POI context.
 - Admin POI management, feedback review, discovery card management, and AI record review.
 
-## Second Stage Focus
+## Second Version Focus
 
-- Strengthen the demo loop from user question to POI correction.
-- Expand campus POI seed data so AI recommendations feel campus-specific.
-- Keep mock AI structured, but make intent recognition cover find, recommend, and route-help scenarios.
-- Make feedback approval visibly update POI status or remarks, not only mark feedback as reviewed.
-- Keep discovery as lightweight place/route experience cards.
+- Keep Mock AI stable while adding optional DeepSeek structured intent recognition.
+- Use AMap JS API 2.0 when configured, with a built-in demo-map fallback when the key is missing or loading fails.
+- Keep AI responses constrained to `intent`, `reply`, `pois`, `toolCalls`, and `mapActions`.
+- Require user feedback to bind to an existing POI and make approved changes visible in user POI details.
+- Keep NUIST seed data self-managed and source-aware; avoid unverified opening-hour claims.
+- Prepare thesis-ready diagrams and test cases in `docs/thesis-materials.md`.
 
 ## UI Direction
 

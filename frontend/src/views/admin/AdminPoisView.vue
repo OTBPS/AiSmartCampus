@@ -2,86 +2,100 @@
   <AppShell>
     <div class="page-head">
       <div>
-        <h1>POI 管理</h1>
-        <p>维护自建校园地点数据，支撑 AI 推荐和地图展示。</p>
+        <h1>{{ $t('admin.poiTitle') }}</h1>
+        <p>{{ $t('admin.poiSubtitle') }}</p>
       </div>
       <div class="page-actions">
-        <el-button @click="load">刷新</el-button>
-        <el-button type="primary" @click="openCreate">新增地点</el-button>
+        <el-button @click="load">{{ $t('common.refresh') }}</el-button>
+        <el-button type="primary" @click="openCreate">{{ $t('admin.addPoi') }}</el-button>
       </div>
     </div>
 
     <section class="table-panel">
       <div class="admin-filter-bar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索名称、位置或标签" style="max-width: 300px" />
-        <el-select v-model="filters.category" clearable placeholder="分类" style="width: 150px">
-          <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
+        <el-input v-model="filters.keyword" clearable :placeholder="$t('admin.searchPoiPlaceholder')" style="max-width: 300px" />
+        <el-select v-model="filters.category" clearable :placeholder="$t('common.category')" style="width: 150px">
+          <el-option v-for="item in categoryOptions" :key="item" :label="item" :value="item" />
         </el-select>
-        <el-select v-model="filters.openStatus" clearable placeholder="开放状态" style="width: 150px">
-          <el-option label="开放" value="OPEN" />
-          <el-option label="临时关闭" value="TEMP_CLOSED" />
-          <el-option label="维护中" value="MAINTENANCE" />
+        <el-select v-model="filters.openStatus" clearable :placeholder="$t('admin.statusFilter')" style="width: 150px">
+          <el-option :label="$t('common.open')" value="OPEN" />
+          <el-option :label="$t('common.tempClosed')" value="TEMP_CLOSED" />
+          <el-option :label="$t('common.maintenance')" value="MAINTENANCE" />
         </el-select>
-        <el-input v-model="filters.tag" clearable placeholder="标签筛选" style="max-width: 180px" />
-        <el-switch v-model="filters.enabledOnly" active-text="仅启用" />
-        <span class="filter-count">当前 {{ filteredPois.length }} / {{ pois.length }} 个地点</span>
+        <el-input v-model="filters.tag" clearable :placeholder="$t('admin.tagFilter')" style="max-width: 180px" />
+        <el-switch v-model="filters.enabledOnly" :active-text="$t('admin.enabledOnly')" />
+        <span class="filter-count">{{ $t('common.poiCount', { current: filteredPois.length, total: pois.length }) }}</span>
       </div>
 
       <el-table :data="filteredPois" height="620">
-        <el-table-column prop="name" label="名称" width="180" />
-        <el-table-column prop="category" label="分类" width="120" />
-        <el-table-column prop="locationText" label="位置描述" />
-        <el-table-column label="标签" min-width="230">
+        <el-table-column prop="name" :label="$t('admin.name')" width="180" />
+        <el-table-column prop="category" :label="$t('common.category')" width="120" />
+        <el-table-column prop="mapRank" label="Map Rank" width="100" />
+        <el-table-column prop="locationText" :label="$t('admin.locationText')" />
+        <el-table-column :label="$t('admin.tags')" min-width="230">
           <template #default="{ row }">
             <div class="tag-cell">
               <el-tag v-for="tag in splitTags(row.tags)" :key="tag" effect="plain" size="small">{{ tag }}</el-tag>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="120">
+        <el-table-column :label="$t('common.status')" width="120">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.openStatus)" effect="plain">{{ statusLabel(row.openStatus) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="可用" width="90">
+        <el-table-column :label="$t('admin.available')" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? '启用' : '禁用' }}</el-tag>
+            <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? $t('common.enabled') : $t('common.disabled') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column :label="$t('common.action')" width="160">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="primary" @click="openEdit(row)">{{ $t('common.edit') }}</el-button>
             <el-button link :type="row.enabled ? 'warning' : 'success'" @click="toggle(row)">
-              {{ row.enabled ? '禁用' : '启用' }}
+              {{ row.enabled ? $t('common.disabled') : $t('common.enabled') }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
     </section>
 
-    <el-dialog v-model="visible" :title="form.id ? '编辑 POI' : '新增 POI'" width="620px">
+    <el-dialog v-model="visible" :title="form.id ? $t('admin.editPoi') : $t('admin.createPoi')" width="620px">
       <el-form label-position="top">
-        <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="分类"><el-input v-model="form.category" placeholder="STUDY / DINING / SERVICE" /></el-form-item>
-        <el-form-item label="坐标">
+        <el-form-item :label="$t('admin.name')"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="$t('common.category')">
+          <el-select v-model="form.category" style="width: 100%">
+            <el-option v-for="item in categoryOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('admin.coordinates')">
           <el-input-number v-model="form.longitude" :precision="6" style="width: 48%" />
           <el-input-number v-model="form.latitude" :precision="6" style="width: 48%; margin-left: 4%" />
         </el-form-item>
-        <el-form-item label="位置描述"><el-input v-model="form.locationText" /></el-form-item>
-        <el-form-item label="标签"><el-input v-model="form.tags" placeholder="安静,有插座,遮蔽" /></el-form-item>
-        <el-form-item label="开放状态">
+        <CoordinatePreview
+          :longitude="form.longitude"
+          :latitude="form.latitude"
+          @pick="updateCoordinates"
+        />
+        <el-form-item :label="$t('admin.locationText')"><el-input v-model="form.locationText" /></el-form-item>
+        <el-form-item :label="$t('admin.tags')"><el-input v-model="form.tags" :placeholder="$t('admin.tagPlaceholder')" /></el-form-item>
+        <el-form-item label="Map Rank">
+          <el-input-number v-model="form.mapRank" :min="1" :max="20" :precision="0" controls-position="right" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="Source URL"><el-input v-model="form.sourceUrl" /></el-form-item>
+        <el-form-item :label="$t('admin.statusFilter')">
           <el-select v-model="form.openStatus" style="width: 100%">
-            <el-option label="开放" value="OPEN" />
-            <el-option label="临时关闭" value="TEMP_CLOSED" />
-            <el-option label="维护中" value="MAINTENANCE" />
+            <el-option :label="$t('common.open')" value="OPEN" />
+            <el-option :label="$t('common.tempClosed')" value="TEMP_CLOSED" />
+            <el-option :label="$t('common.maintenance')" value="MAINTENANCE" />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
-        <el-checkbox v-model="form.sheltered">遮蔽地点</el-checkbox>
+        <el-form-item :label="$t('admin.remark')"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-checkbox v-model="form.sheltered">{{ $t('admin.sheltered') }}</el-checkbox>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="visible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="save">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AppShell>
@@ -90,9 +104,13 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
+import CoordinatePreview from '../../components/CoordinatePreview.vue'
 import { poiApi } from '../../api/modules'
 
+const { t } = useI18n()
+const categoryOptions = ['STUDY', 'TEACHING', 'DINING', 'DORM', 'SERVICE', 'SPORTS', 'TRANSPORT', 'LANDMARK']
 const pois = ref([])
 const visible = ref(false)
 const form = reactive(emptyForm())
@@ -111,22 +129,22 @@ function emptyForm() {
     id: null,
     name: '',
     category: 'STUDY',
-    longitude: 113.9345,
-    latitude: 22.5331,
+    longitude: 118.71885,
+    latitude: 32.20796,
     locationText: '',
     openStatus: 'OPEN',
     tags: '',
     sheltered: false,
     remark: '',
-    enabled: true
+    enabled: true,
+    mapRank: null,
+    sourceUrl: ''
   }
 }
 
 async function load() {
   pois.value = await poiApi.list({ enabledOnly: false })
 }
-
-const categories = computed(() => Array.from(new Set(pois.value.map((item) => item.category).filter(Boolean))))
 
 const filteredPois = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase()
@@ -152,10 +170,15 @@ function openEdit(row) {
   visible.value = true
 }
 
+function updateCoordinates(point) {
+  form.longitude = point.longitude
+  form.latitude = point.latitude
+}
+
 async function save() {
   if (form.id) await poiApi.update(form.id, form)
   else await poiApi.create(form)
-  ElMessage.success('POI 已保存')
+  ElMessage.success(t('admin.poiSaved'))
   visible.value = false
   load()
 }
@@ -171,10 +194,10 @@ function splitTags(tags) {
 
 function statusLabel(status) {
   return {
-    OPEN: '开放',
-    TEMP_CLOSED: '临时关闭',
-    MAINTENANCE: '维护中'
-  }[status] || status || '未知'
+    OPEN: t('common.open'),
+    TEMP_CLOSED: t('common.tempClosed'),
+    MAINTENANCE: t('common.maintenance')
+  }[status] || status || t('common.unknown')
 }
 
 function statusTag(status) {

@@ -87,10 +87,17 @@ a {
 }
 
 .auth-panel {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 48px;
+}
+
+.auth-locale {
+  position: absolute;
+  top: 28px;
+  right: 48px;
 }
 
 .auth-card {
@@ -147,6 +154,78 @@ a {
 
 .nav-section {
   margin-top: 18px;
+}
+
+.locale-switch {
+  display: grid;
+  gap: 8px;
+  color: var(--scn-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.locale-switch.compact {
+  display: inline-flex;
+}
+
+.locale-label {
+  line-height: 1;
+}
+
+.locale-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.86);
+  padding: 4px;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.locale-option {
+  min-width: 76px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--scn-muted);
+  padding: 0 12px;
+  font-weight: 900;
+  line-height: 30px;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.locale-option:hover {
+  color: var(--scn-primary-dark);
+}
+
+.locale-option.active {
+  background: linear-gradient(135deg, var(--scn-primary), #0ea5e9);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.24);
+}
+
+.locale-option:active {
+  transform: scale(0.98);
+}
+
+.auth-locale .locale-track {
+  border-color: rgba(215, 226, 234, 0.9);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.side-nav .locale-track {
+  width: 100%;
+}
+
+.side-nav .locale-option {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
 }
 
 .nav-section-title {
@@ -398,6 +477,32 @@ a {
   background-size: 52px 52px, 52px 52px, auto;
 }
 
+.map-placeholder.active {
+  background: #eef7f5;
+}
+
+.map-fallback-badge {
+  position: absolute;
+  z-index: 20;
+  top: 14px;
+  right: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 6px 10px;
+  color: var(--scn-primary-dark);
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.1);
+}
+
+.map-fallback-badge {
+  right: auto;
+  left: 14px;
+  max-width: min(360px, calc(100% - 28px));
+  color: #92400e;
+}
+
 .map-road {
   position: absolute;
   border-radius: 999px;
@@ -495,6 +600,60 @@ a {
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.amap-poi-marker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transform: translateY(-4px);
+  border: 1px solid rgba(2, 132, 199, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 5px 9px 5px 5px;
+  color: var(--scn-text);
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+  white-space: nowrap;
+}
+
+.amap-poi-marker span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--scn-blue);
+  color: #fff;
+}
+
+.amap-poi-marker.active {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: #ecfdf5;
+  box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.14), 0 14px 30px rgba(15, 23, 42, 0.22);
+}
+
+.amap-poi-marker.active span {
+  background: var(--scn-green);
+}
+
+.amap-route-endpoint {
+  border: 2px solid #fff;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.22);
+}
+
+.amap-route-endpoint.start {
+  background: #0f766e;
+}
+
+.amap-route-endpoint.end {
+  background: #0369a1;
 }
 
 .detail-panel {
@@ -680,6 +839,35 @@ a {
 .admin-filter-bar {
   justify-content: flex-start;
   margin-bottom: 12px;
+}
+
+.coordinate-preview {
+  overflow: hidden;
+  margin: -6px 0 18px;
+  border: 1px solid var(--scn-line);
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.coordinate-map {
+  height: 220px;
+  background:
+    linear-gradient(90deg, rgba(15, 118, 110, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(15, 118, 110, 0.08) 1px, transparent 1px),
+    #e7f7f3;
+  background-size: 40px 40px, 40px 40px, auto;
+}
+
+.coordinate-preview-note {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  color: var(--scn-muted);
+  font-size: 12px;
+}
+
+.coordinate-preview-note strong {
+  color: var(--scn-text);
 }
 
 .filter-count,

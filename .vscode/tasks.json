@@ -1,0 +1,66 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: Spring Boot",
+      "type": "shell",
+      "command": "mvn.cmd",
+      "args": [
+        "-f",
+        "backend\\pom.xml",
+        "spring-boot:run"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "DB_URL": "jdbc:mysql://localhost:3306/smart_campus_navigation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai",
+          "DB_USERNAME": "root",
+          "DB_PASSWORD": "replace-with-local-mysql-password",
+          "JWT_SECRET": "change-this-local-development-secret-at-least-32-bytes",
+          "AI_PROVIDER": "mock"
+        }
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "smart-campus"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: Vite",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "smart-campus"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start SmartCampusNavigation",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "Backend: Spring Boot",
+        "Frontend: Vite"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

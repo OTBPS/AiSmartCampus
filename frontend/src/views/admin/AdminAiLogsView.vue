@@ -2,10 +2,10 @@
   <AppShell>
     <div class="page-head">
       <div>
-        <h1>AI 交互记录</h1>
-        <p>用于展示用户问题、识别意图和地图动作，不扩展成复杂日志平台。</p>
+        <h1>{{ $t('admin.aiLogsTitle') }}</h1>
+        <p>{{ $t('admin.aiLogsSubtitle') }}</p>
       </div>
-      <el-button type="primary" @click="load">刷新</el-button>
+      <el-button type="primary" @click="load">{{ $t('common.refresh') }}</el-button>
     </div>
 
     <section class="table-panel">
@@ -13,34 +13,34 @@
         <el-input
           v-model="keyword"
           clearable
-          placeholder="搜索用户问题、回复或地图动作"
+          :placeholder="$t('admin.searchLogsPlaceholder')"
           style="max-width: 340px"
         />
-        <el-select v-model="intentFilter" clearable placeholder="意图筛选" style="width: 180px">
+        <el-select v-model="intentFilter" clearable :placeholder="$t('admin.intentFilter')" style="width: 180px">
           <el-option v-for="item in intentOptions" :key="item" :label="intentLabel(item)" :value="item" />
         </el-select>
-        <span class="filter-count">当前 {{ filteredLogs.length }} / {{ logs.length }} 条</span>
+        <span class="filter-count">{{ $t('common.itemsCount', { current: filteredLogs.length, total: logs.length }) }}</span>
       </div>
 
       <el-table :data="filteredLogs" height="620">
-        <el-table-column label="用户问题" min-width="230">
+        <el-table-column :label="$t('admin.userQuestion')" min-width="230">
           <template #default="{ row }">
             <div class="log-question">{{ row.question }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="识别意图" width="135">
+        <el-table-column :label="$t('admin.recognizedIntent')" width="135">
           <template #default="{ row }">
             <el-tag effect="plain">{{ intentLabel(row.intent) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="工具调用" min-width="210">
+        <el-table-column :label="$t('admin.toolCall')" min-width="210">
           <template #default="{ row }">
             <div class="action-chip-list compact">
               <el-tag v-for="item in toolLabels(row)" :key="item.key" type="info" effect="plain">{{ item.label }}</el-tag>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="地图动作" min-width="250">
+        <el-table-column :label="$t('admin.mapAction')" min-width="250">
           <template #default="{ row }">
             <div class="action-chip-list compact">
               <el-tag
@@ -54,7 +54,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="AI 回复" min-width="300">
+        <el-table-column :label="$t('admin.aiReply')" min-width="300">
           <template #default="{ row }">
             <div class="log-reply">{{ row.reply }}</div>
           </template>
@@ -66,9 +66,11 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
 import { aiApi } from '../../api/modules'
 
+const { t } = useI18n()
 const logs = ref([])
 const keyword = ref('')
 const intentFilter = ref('')
@@ -114,27 +116,15 @@ function actionLabels(row) {
 }
 
 function intentLabel(intent) {
-  return {
-    find_poi: '找地点',
-    recommend_place: '条件推荐',
-    route_help: '路线帮助'
-  }[intent] || '未识别'
+  return t(`labels.intent.${intent}`, t('labels.intent.unknown'))
 }
 
 function toolLabel(tool) {
-  return {
-    searchPoi: 'POI 检索',
-    searchPoiByTags: '标签推荐',
-    planCampusRouteFallback: '路线兜底'
-  }[tool] || tool
+  return t(`labels.tool.${tool}`, tool)
 }
 
 function actionLabel(action) {
-  const typeLabel = {
-    highlight_pois: '高亮地点',
-    open_poi_detail: '打开详情',
-    draw_route: '绘制路线'
-  }[action.type] || action.type || '未知动作'
+  const typeLabel = t(`labels.action.${action.type}`, action.type || t('labels.action.unknown'))
   if (action.type === 'draw_route' && action.payload?.from && action.payload?.to) {
     return `${typeLabel}: ${action.payload.from} -> ${action.payload.to}`
   }

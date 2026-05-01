@@ -2,28 +2,28 @@
   <AppShell>
     <div class="page-head">
       <div>
-        <h1>管理员首页</h1>
-        <p>围绕 POI 数据质量、反馈闭环和 AI 地图链路的管理工作台。</p>
+        <h1>{{ $t('admin.dashboardTitle') }}</h1>
+        <p>{{ $t('admin.dashboardSubtitle') }}</p>
       </div>
-      <el-button type="primary" @click="load">刷新数据</el-button>
+      <el-button type="primary" @click="load">{{ $t('common.refreshData') }}</el-button>
     </div>
 
     <div class="card-grid metric-grid">
       <section class="metric-card">
         <strong>{{ stats.poiCount }}</strong>
-        <span>校园 POI</span>
+        <span>{{ $t('admin.campusPoi') }}</span>
       </section>
       <section class="metric-card highlight">
         <strong>{{ stats.pendingFeedbackCount }}</strong>
-        <span>待审核反馈</span>
+        <span>{{ $t('admin.pendingFeedback') }}</span>
       </section>
       <section class="metric-card">
         <strong>{{ stats.aiQueryCount }}</strong>
-        <span>AI 查询记录</span>
+        <span>{{ $t('admin.aiQueryRecords') }}</span>
       </section>
       <section class="metric-card">
         <strong>{{ stats.discoverPostCount }}</strong>
-        <span>地点经验卡片</span>
+        <span>{{ $t('admin.discoverCards') }}</span>
       </section>
     </div>
 
@@ -31,72 +31,72 @@
       <section class="table-panel dashboard-panel">
         <div class="panel-title-row">
           <div>
-            <h2>AI 意图分布</h2>
-            <p>用于判断用户是否真的围绕地图查询。</p>
+            <h2>{{ $t('admin.intentDistribution') }}</h2>
+            <p>{{ $t('admin.intentDescription') }}</p>
           </div>
         </div>
         <div class="stat-list">
           <div v-for="item in stats.aiIntentStats" :key="item.key" class="stat-row">
             <div class="stat-line">
-              <strong>{{ item.label }}</strong>
-              <span>{{ item.count }} 次</span>
+              <strong>{{ intentLabel(item.key) }}</strong>
+              <span>{{ $t('admin.countTimes', { count: item.count }) }}</span>
             </div>
             <div class="stat-track">
               <span :style="{ width: barWidth(item, stats.aiIntentStats) }" />
             </div>
           </div>
-          <el-empty v-if="!stats.aiIntentStats.length" description="暂无 AI 记录" :image-size="70" />
+          <el-empty v-if="!stats.aiIntentStats.length" :description="$t('admin.noAiRecords')" :image-size="70" />
         </div>
       </section>
 
       <section class="table-panel dashboard-panel">
         <div class="panel-title-row">
           <div>
-            <h2>地图动作分布</h2>
-            <p>展示 AI 是否触发了高亮、详情和路线等地图动作。</p>
+            <h2>{{ $t('admin.mapActionDistribution') }}</h2>
+            <p>{{ $t('admin.mapActionDescription') }}</p>
           </div>
         </div>
         <div class="action-chip-list">
           <el-tag v-for="item in stats.mapActionStats" :key="item.key" size="large" effect="plain">
-            {{ item.label }} · {{ item.count }}
+            {{ actionLabel(item.key) }} · {{ item.count }}
           </el-tag>
-          <el-empty v-if="!stats.mapActionStats.length" description="暂无地图动作" :image-size="70" />
+          <el-empty v-if="!stats.mapActionStats.length" :description="$t('admin.noMapActions')" :image-size="70" />
         </div>
       </section>
 
       <section class="table-panel dashboard-panel">
         <div class="panel-title-row">
           <div>
-            <h2>反馈状态</h2>
-            <p>用于检查反馈闭环是否持续推进。</p>
+            <h2>{{ $t('admin.feedbackStatus') }}</h2>
+            <p>{{ $t('admin.feedbackStatusDescription') }}</p>
           </div>
         </div>
         <div class="status-grid">
           <div v-for="item in stats.feedbackStatusStats" :key="item.key" class="status-card">
-            <span>{{ item.label }}</span>
+            <span>{{ feedbackStatusLabel(item.key) }}</span>
             <strong>{{ item.count }}</strong>
             <small>{{ item.percent }}%</small>
           </div>
-          <el-empty v-if="!stats.feedbackStatusStats.length" description="暂无反馈" :image-size="70" />
+          <el-empty v-if="!stats.feedbackStatusStats.length" :description="$t('admin.noFeedback')" :image-size="70" />
         </div>
       </section>
 
       <section class="table-panel dashboard-panel">
         <div class="panel-title-row">
           <div>
-            <h2>热门地点</h2>
-            <p>按 AI 地图动作和反馈关联度估算。</p>
+            <h2>{{ $t('admin.hotPois') }}</h2>
+            <p>{{ $t('admin.hotPoisDescription') }}</p>
           </div>
         </div>
         <el-table :data="stats.hotPois" height="245">
-          <el-table-column prop="name" label="地点" min-width="150" />
-          <el-table-column prop="category" label="分类" width="100" />
-          <el-table-column label="状态" width="110">
+          <el-table-column prop="name" :label="$t('admin.poiName')" min-width="150" />
+          <el-table-column prop="category" :label="$t('common.category')" width="100" />
+          <el-table-column :label="$t('common.status')" width="110">
             <template #default="{ row }">
               <el-tag :type="statusTag(row.openStatus)" effect="plain">{{ statusLabel(row.openStatus) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="heat" label="热度" width="90" />
+          <el-table-column prop="heat" :label="$t('admin.heat')" width="90" />
         </el-table>
       </section>
     </div>
@@ -105,9 +105,11 @@
 
 <script setup>
 import { onMounted, reactive } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
 import { adminApi } from '../../api/modules'
 
+const { t } = useI18n()
 const stats = reactive({
   poiCount: 0,
   pendingFeedbackCount: 0,
@@ -132,10 +134,10 @@ function barWidth(item, items) {
 
 function statusLabel(status) {
   return {
-    OPEN: '开放',
-    TEMP_CLOSED: '临时关闭',
-    MAINTENANCE: '维护中'
-  }[status] || status || '未知'
+    OPEN: t('common.open'),
+    TEMP_CLOSED: t('common.tempClosed'),
+    MAINTENANCE: t('common.maintenance')
+  }[status] || status || t('common.unknown')
 }
 
 function statusTag(status) {
@@ -144,5 +146,21 @@ function statusTag(status) {
     TEMP_CLOSED: 'warning',
     MAINTENANCE: 'danger'
   }[status] || 'info'
+}
+
+function intentLabel(intent) {
+  return t(`labels.intent.${intent}`, intent)
+}
+
+function actionLabel(action) {
+  return t(`labels.action.${action}`, action)
+}
+
+function feedbackStatusLabel(status) {
+  return {
+    PENDING: t('common.pending'),
+    APPROVED: t('common.approved'),
+    REJECTED: t('common.rejected')
+  }[status] || status
 }
 </script>

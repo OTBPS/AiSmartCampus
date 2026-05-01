@@ -20,6 +20,7 @@ public class PoiEntity {
     public Boolean sheltered;
     public String remark;
     public Boolean enabled;
+    public Integer mapRank;
+    public String sourceUrl;
     public LocalDateTime updatedAt;
 }
-

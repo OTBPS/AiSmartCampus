@@ -19,6 +19,11 @@ public class FeedbackService {
     }
 
     public FeedbackEntity submit(Long userId, FeedbackRequest request) {
+        if (request.poiId == null) {
+            throw new BizException("反馈必须绑定 POI");
+        }
+        poiService.get(request.poiId);
+
         FeedbackEntity entity = new FeedbackEntity();
         entity.userId = userId;
         entity.poiId = request.poiId;

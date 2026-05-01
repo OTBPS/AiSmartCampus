@@ -14,7 +14,7 @@ export const poiApi = {
 }
 
 export const aiApi = {
-  chat: (message) => http.post('/ai/chat', { message }),
+  chat: (message, locale) => http.post('/ai/chat', { message, locale }),
   logs: () => http.get('/ai/admin/logs')
 }
 
@@ -35,4 +35,3 @@ export const discoverApi = {
 export const adminApi = {
   dashboard: () => http.get('/admin/dashboard')
 }
-
