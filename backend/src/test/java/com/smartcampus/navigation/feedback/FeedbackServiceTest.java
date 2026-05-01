@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.smartcampus.navigation.common.BizException;
 import com.smartcampus.navigation.poi.PoiEntity;
 import com.smartcampus.navigation.poi.PoiService;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
 class FeedbackServiceTest {
@@ -95,7 +96,38 @@ class FeedbackServiceTest {
         assertSame(pending, reviewed);
         assertEquals("APPROVED", pending.status);
         assertEquals("Verified", pending.reviewNote);
-        verify(poiService).updateStatusAndRemark(9L, null, "Added based on user feedback.", null);
+        verify(poiService).updateFromFeedbackReview(9L, null, "Added based on user feedback.", null, null, null);
+    }
+
+    @Test
+    void approveFeedbackCanSyncPoiCoordinates() {
+        FeedbackMapper feedbackMapper = mock(FeedbackMapper.class);
+        PoiService poiService = mock(PoiService.class);
+        FeedbackEntity pending = new FeedbackEntity();
+        pending.id = 4L;
+        pending.userId = 1L;
+        pending.poiId = 12L;
+        pending.status = "PENDING";
+        when(feedbackMapper.selectById(4L)).thenReturn(pending);
+        when(feedbackMapper.updateById(any(FeedbackEntity.class))).thenReturn(1);
+
+        FeedbackReviewRequest request = new FeedbackReviewRequest();
+        request.status = "APPROVED";
+        request.reviewNote = "Coordinate verified";
+        request.poiLongitude = BigDecimal.valueOf(118.719001);
+        request.poiLatitude = BigDecimal.valueOf(32.204001);
+
+        FeedbackEntity reviewed = new FeedbackService(feedbackMapper, poiService).review(4L, request);
+
+        assertSame(pending, reviewed);
+        verify(poiService).updateFromFeedbackReview(
+                12L,
+                null,
+                null,
+                null,
+                BigDecimal.valueOf(118.719001),
+                BigDecimal.valueOf(32.204001)
+        );
     }
 
     private FeedbackRequest request(Long poiId) {

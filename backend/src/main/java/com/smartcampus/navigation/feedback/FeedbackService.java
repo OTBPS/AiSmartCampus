@@ -58,8 +58,18 @@ public class FeedbackService {
         entity.reviewedAt = LocalDateTime.now();
         feedbackMapper.updateById(entity);
         if ("APPROVED".equals(request.status) && entity.poiId != null
-                && (StringUtils.hasText(request.poiOpenStatus) || StringUtils.hasText(request.poiRemark))) {
-            poiService.updateStatusAndRemark(entity.poiId, request.poiOpenStatus, request.poiRemark, null);
+                && (StringUtils.hasText(request.poiOpenStatus)
+                || StringUtils.hasText(request.poiRemark)
+                || request.poiLongitude != null
+                || request.poiLatitude != null)) {
+            poiService.updateFromFeedbackReview(
+                    entity.poiId,
+                    request.poiOpenStatus,
+                    request.poiRemark,
+                    null,
+                    request.poiLongitude,
+                    request.poiLatitude
+            );
         }
         return feedbackMapper.selectById(id);
     }

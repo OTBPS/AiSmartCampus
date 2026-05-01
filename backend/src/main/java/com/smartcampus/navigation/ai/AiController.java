@@ -4,6 +4,7 @@ import com.smartcampus.navigation.common.ApiResponse;
 import com.smartcampus.navigation.security.SecurityUsers;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,11 +22,21 @@ public class AiController {
 
     @PostMapping("/chat")
     public ApiResponse<AiChatResponse> chat(@Valid @RequestBody AiChatRequest request) {
-        return ApiResponse.ok(aiChatService.chat(SecurityUsers.current().id(), request.message, request.locale));
+        return ApiResponse.ok(aiChatService.chat(SecurityUsers.current().id(), request.message, request.locale, request.routeContext));
     }
 
     @GetMapping("/admin/logs")
     public ApiResponse<List<AiMessageEntity>> logs() {
         return ApiResponse.ok(aiChatService.logs());
+    }
+
+    @GetMapping("/logs/mine")
+    public ApiResponse<List<AiMessageEntity>> mineLogs() {
+        return ApiResponse.ok(aiChatService.logsByUser(SecurityUsers.current().id()));
+    }
+
+    @DeleteMapping("/logs/mine")
+    public ApiResponse<Integer> clearMineLogs() {
+        return ApiResponse.ok(aiChatService.clearLogsByUser(SecurityUsers.current().id()));
     }
 }

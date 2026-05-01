@@ -29,24 +29,43 @@ public class AiChatService {
     }
 
     public AiChatResponse chat(Long userId, String message, String locale) {
-        AiChatResponse response = resolveResponse(message, locale);
+        return chat(userId, message, locale, null);
+    }
+
+    public AiChatResponse chat(Long userId, String message, String locale, AiChatRequest.RouteContext routeContext) {
+        AiChatResponse response = resolveResponse(message, locale, routeContext);
         saveLog(userId, message, response);
         return response;
     }
 
     public AiChatResponse preview(String message, String locale) {
-        return resolveResponse(message, locale);
+        return preview(message, locale, null);
+    }
+
+    public AiChatResponse preview(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        return resolveResponse(message, locale, routeContext);
     }
 
     public java.util.List<AiMessageEntity> logs() {
         return aiMessageMapper.selectList(new QueryWrapper<AiMessageEntity>().orderByDesc("created_at").last("LIMIT 100"));
     }
 
-    private AiChatResponse resolveResponse(String message, String locale) {
+    public java.util.List<AiMessageEntity> logsByUser(Long userId) {
+        return aiMessageMapper.selectList(new QueryWrapper<AiMessageEntity>()
+                .eq("user_id", userId)
+                .orderByDesc("created_at")
+                .last("LIMIT 30"));
+    }
+
+    public int clearLogsByUser(Long userId) {
+        return aiMessageMapper.delete(new QueryWrapper<AiMessageEntity>().eq("user_id", userId));
+    }
+
+    private AiChatResponse resolveResponse(String message, String locale, AiChatRequest.RouteContext routeContext) {
         if ("deepseek".equalsIgnoreCase(provider) && deepSeekAiService.isConfigured()) {
-            AiChatResponse ruleResponse = mockAiService.preview(message, locale);
+            AiChatResponse ruleResponse = mockPreview(message, locale, routeContext);
             try {
-                AiChatResponse response = deepSeekAiService.chat(message, locale);
+                AiChatResponse response = deepSeekChat(message, locale, routeContext);
                 if (!needsFallback(response) && matchesRuleIntent(ruleResponse, response)) {
                     return response;
                 }
@@ -55,7 +74,19 @@ public class AiChatService {
             }
             return ruleResponse;
         }
-        return mockAiService.preview(message, locale);
+        return mockPreview(message, locale, routeContext);
+    }
+
+    private AiChatResponse mockPreview(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        return routeContext == null
+                ? mockAiService.preview(message, locale)
+                : mockAiService.preview(message, locale, routeContext);
+    }
+
+    private AiChatResponse deepSeekChat(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        return routeContext == null
+                ? deepSeekAiService.chat(message, locale)
+                : deepSeekAiService.chat(message, locale, routeContext);
     }
 
     private boolean needsFallback(AiChatResponse response) {

@@ -14,8 +14,10 @@ export const poiApi = {
 }
 
 export const aiApi = {
-  chat: (message, locale) => http.post('/ai/chat', { message, locale }),
-  logs: () => http.get('/ai/admin/logs')
+  chat: (message, locale, routeContext) => http.post('/ai/chat', routeContext ? { message, locale, routeContext } : { message, locale }),
+  logs: () => http.get('/ai/admin/logs'),
+  mineLogs: () => http.get('/ai/logs/mine'),
+  clearMineLogs: () => http.delete('/ai/logs/mine')
 }
 
 export const feedbackApi = {

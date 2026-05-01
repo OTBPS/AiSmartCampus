@@ -57,11 +57,15 @@ public class DeepSeekAiService {
     }
 
     public AiChatResponse chat(String message, String locale) {
+        return chat(message, locale, null);
+    }
+
+    public AiChatResponse chat(String message, String locale, AiChatRequest.RouteContext routeContext) {
         List<PoiEntity> pois = poiService.list(null, null, null, true);
         JsonNode result = client().post()
                 .uri("/chat/completions")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(requestBody(message, locale, pois))
+                .body(requestBody(message, locale, pois, routeContext))
                 .retrieve()
                 .body(JsonNode.class);
         String content = result == null ? "" : result.path("choices").path(0).path("message").path("content").asText("");
@@ -82,12 +86,12 @@ public class DeepSeekAiService {
                 .build();
     }
 
-    private Map<String, Object> requestBody(String message, String locale, List<PoiEntity> pois) {
+    private Map<String, Object> requestBody(String message, String locale, List<PoiEntity> pois, AiChatRequest.RouteContext routeContext) {
         return Map.of(
                 "model", model,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt(locale, pois)),
-                        Map.of("role", "user", "content", message)
+                        Map.of("role", "user", "content", userPrompt(message, routeContext, pois))
                 ),
                 "response_format", Map.of("type", "json_object"),
                 "temperature", 0.1,
@@ -111,7 +115,9 @@ public class DeepSeekAiService {
         builder.append("{\"type\":\"open_poi_detail\",\"poiId\":1},");
         builder.append("{\"type\":\"draw_route\",\"poiIds\":[1,2],\"routeMode\":\"AMAP_FALLBACK\",");
         builder.append("\"payload\":{\"from\":\"origin name\",\"to\":\"destination name\",\"reason\":\"standard route fallback\"}}]}.");
-        builder.append(" For route questions, prefer draw_route with exactly origin and destination POI IDs. ");
+        builder.append(" For route questions, return draw_route.poiIds in route order: origin, waypoints, destination. ");
+        builder.append("If map route context is supplied, use text-mentioned origin/destination first, fill missing route endpoints from context, keep context waypoint order, append extra text waypoints, and de-duplicate. ");
+        builder.append("For draw_route payload, include from, to, via as an array of waypoint names, reason, and source as text|map_context|mixed. ");
         builder.append("Campus POIs:\n");
         for (PoiEntity poi : pois) {
             builder.append("- id=").append(poi.id)
@@ -123,6 +129,20 @@ public class DeepSeekAiService {
                     .append(", sheltered=").append(Boolean.TRUE.equals(poi.sheltered))
                     .append(", remark=").append(nullToEmpty(poi.remark))
                     .append("\n");
+        }
+        return builder.toString();
+    }
+
+    private String userPrompt(String message, AiChatRequest.RouteContext routeContext, List<PoiEntity> pois) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("User message: ").append(message == null ? "" : message).append("\n");
+        if (routeContext != null) {
+            builder.append("Current map route context POI IDs: ");
+            builder.append("originPoiId=").append(routeContext.originPoiId).append(", ");
+            builder.append("destinationPoiId=").append(routeContext.destinationPoiId).append(", ");
+            builder.append("waypointPoiIds=").append(routeContext.waypointPoiIds == null ? List.of() : routeContext.waypointPoiIds).append(".\n");
+            builder.append("Ignore IDs that are not present in the campus POI list. ");
+            builder.append("If enough valid endpoints exist, produce route_help with draw_route.");
         }
         return builder.toString();
     }

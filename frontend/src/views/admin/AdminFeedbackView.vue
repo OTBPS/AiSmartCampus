@@ -82,6 +82,17 @@
             <el-option :label="$t('common.maintenance')" value="MAINTENANCE" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="$t('admin.changePoiCoordinate')">
+          <div class="coordinate-review-row">
+            <el-radio-group v-model="review.changeCoordinate" @change="handleCoordinateToggle">
+              <el-radio-button :label="false">{{ $t('common.no') }}</el-radio-button>
+              <el-radio-button :label="true">{{ $t('common.yes') }}</el-radio-button>
+            </el-radio-group>
+            <el-button v-if="review.changeCoordinate" size="small" @click="coordinateVisible = true">
+              {{ $t('admin.editCoordinates') }}
+            </el-button>
+          </div>
+        </el-form-item>
         <el-form-item :label="$t('admin.reviewNote')">
           <el-input v-model="review.reviewNote" type="textarea" />
         </el-form-item>
@@ -98,10 +109,34 @@
         <strong>{{ $t('admin.visibleChange') }}</strong>
         <span>{{ $t('admin.poiStatusChange', { from: statusLabel(currentPoi.openStatus), to: statusLabel(review.poiOpenStatus || currentPoi.openStatus) }) }}</span>
         <span>{{ $t('admin.poiRemarkChange', { remark: review.poiRemark || currentPoi.remark || $t('common.noRemark') }) }}</span>
+        <span>{{ coordinateImpactText }}</span>
       </div>
       <template #footer>
         <el-button @click="visible = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="submit">{{ $t('admin.confirmReview') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="coordinateVisible"
+      :title="$t('admin.editPoiCoordinate')"
+      width="560px"
+      append-to-body
+    >
+      <el-form label-position="top">
+        <el-form-item :label="$t('admin.coordinates')">
+          <el-input-number v-model="review.poiLongitude" :precision="6" style="width: 48%" />
+          <el-input-number v-model="review.poiLatitude" :precision="6" style="width: 48%; margin-left: 4%" />
+        </el-form-item>
+        <CoordinatePreview
+          :longitude="review.poiLongitude"
+          :latitude="review.poiLatitude"
+          @pick="updateCoordinates"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="cancelCoordinateEdit">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="coordinateVisible = false">{{ $t('admin.confirmCoordinates') }}</el-button>
       </template>
     </el-dialog>
   </AppShell>
@@ -112,6 +147,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
+import CoordinatePreview from '../../components/CoordinatePreview.vue'
 import { feedbackApi, poiApi } from '../../api/modules'
 
 const { t } = useI18n()
@@ -121,9 +157,18 @@ const items = ref([])
 const allItems = ref([])
 const pois = ref([])
 const visible = ref(false)
+const coordinateVisible = ref(false)
 const current = ref(null)
 const currentPoi = ref(null)
-const review = reactive({ status: 'APPROVED', reviewNote: '', poiOpenStatus: '', poiRemark: '' })
+const review = reactive({
+  status: 'APPROVED',
+  reviewNote: '',
+  poiOpenStatus: '',
+  poiRemark: '',
+  changeCoordinate: false,
+  poiLongitude: null,
+  poiLatitude: null
+})
 
 onMounted(load)
 
@@ -158,17 +203,46 @@ function open(row) {
   currentPoi.value = poiFor(row.poiId)
   review.status = 'APPROVED'
   review.reviewNote = t('admin.defaultReviewNote')
-  review.poiOpenStatus = row.type === 'TEMP_CLOSED' ? 'TEMP_CLOSED' : ''
+  review.poiOpenStatus = ''
   review.poiRemark = buildPoiRemark(row, currentPoi.value)
+  review.changeCoordinate = false
+  review.poiLongitude = numberOrNull(currentPoi.value?.longitude)
+  review.poiLatitude = numberOrNull(currentPoi.value?.latitude)
+  coordinateVisible.value = false
   visible.value = true
 }
 
 async function submit() {
-  await feedbackApi.review(current.value.id, review)
+  if (review.changeCoordinate && (!Number.isFinite(Number(review.poiLongitude)) || !Number.isFinite(Number(review.poiLatitude)))) {
+    ElMessage.warning(t('admin.coordinateRequired'))
+    return
+  }
+  const payload = {
+    status: review.status,
+    reviewNote: review.reviewNote,
+    poiOpenStatus: review.poiOpenStatus,
+    poiRemark: review.poiRemark
+  }
+  if (review.changeCoordinate) {
+    payload.poiLongitude = review.poiLongitude
+    payload.poiLatitude = review.poiLatitude
+  }
+  await feedbackApi.review(current.value.id, payload)
   ElMessage.success(t('admin.feedbackReviewed'))
   visible.value = false
+  coordinateVisible.value = false
   await load()
 }
+
+const coordinateImpactText = computed(() => {
+  if (!currentPoi.value || !review.changeCoordinate) {
+    return t('admin.poiCoordinateUnchanged')
+  }
+  return t('admin.poiCoordinateChange', {
+    from: formatCoordinate(currentPoi.value.longitude, currentPoi.value.latitude),
+    to: formatCoordinate(review.poiLongitude, review.poiLatitude)
+  })
+})
 
 function poiFor(poiId) {
   return pois.value.find((item) => item.id === poiId)
@@ -208,6 +282,42 @@ function impactText(row) {
 function buildPoiRemark(row, poi) {
   const addition = t('admin.addedByFeedback', { content: row.content })
   return poi?.remark ? `${poi.remark}；${addition}` : addition
+}
+
+function handleCoordinateToggle(value) {
+  if (value) {
+    coordinateVisible.value = true
+    return
+  }
+  resetCoordinatesToCurrentPoi()
+}
+
+function cancelCoordinateEdit() {
+  coordinateVisible.value = false
+  resetCoordinatesToCurrentPoi()
+  review.changeCoordinate = false
+}
+
+function resetCoordinatesToCurrentPoi() {
+  review.poiLongitude = numberOrNull(currentPoi.value?.longitude)
+  review.poiLatitude = numberOrNull(currentPoi.value?.latitude)
+}
+
+function updateCoordinates(point) {
+  review.poiLongitude = point.longitude
+  review.poiLatitude = point.latitude
+}
+
+function numberOrNull(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function formatCoordinate(longitude, latitude) {
+  const lng = numberOrNull(longitude)
+  const lat = numberOrNull(latitude)
+  if (lng === null || lat === null) return t('common.unknown')
+  return `${lng.toFixed(6)}, ${lat.toFixed(6)}`
 }
 
 function statusLabel(status) {

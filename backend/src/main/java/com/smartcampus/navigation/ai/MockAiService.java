@@ -26,7 +26,11 @@ public class MockAiService {
     }
 
     public AiChatResponse chat(Long userId, String message, String locale) {
-        AiChatResponse response = buildResponse(message, locale);
+        return chat(userId, message, locale, null);
+    }
+
+    public AiChatResponse chat(Long userId, String message, String locale, AiChatRequest.RouteContext routeContext) {
+        AiChatResponse response = buildResponse(message, locale, routeContext);
         try {
             AiMessageEntity log = new AiMessageEntity();
             log.userId = userId;
@@ -43,21 +47,25 @@ public class MockAiService {
     }
 
     public AiChatResponse preview(String message) {
-        return buildResponse(message, "zh-CN");
+        return buildResponse(message, "zh-CN", null);
     }
 
     public AiChatResponse preview(String message, String locale) {
-        return buildResponse(message, locale);
+        return buildResponse(message, locale, null);
+    }
+
+    public AiChatResponse preview(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        return buildResponse(message, locale, routeContext);
     }
 
     public List<AiMessageEntity> logs() {
         return aiMessageMapper.selectList(new QueryWrapper<AiMessageEntity>().orderByDesc("created_at").last("LIMIT 100"));
     }
 
-    private AiChatResponse buildResponse(String message, String locale) {
+    private AiChatResponse buildResponse(String message, String locale, AiChatRequest.RouteContext routeContext) {
         String normalized = normalizeText(message);
-        if (isRouteQuestion(normalized) || isPlainChineseRouteQuestion(normalized)) {
-            return routeHelp(message, locale);
+        if (isRouteQuestion(normalized) || isPlainChineseRouteQuestion(normalized) || looksLikeRouteWithContext(message, routeContext)) {
+            return routeHelp(message, locale, routeContext);
         }
         if (isRecommendationQuestion(normalized) || isPlainChineseRecommendationQuestion(normalized)) {
             return recommendPlace(message, locale);
@@ -67,9 +75,24 @@ public class MockAiService {
 
     private AiChatResponse findPoi(String message, String locale) {
         String keyword = extractKeyword(message);
-        List<PoiEntity> pois = poiService.list(keyword, null, null, true);
+        List<PoiEntity> all = poiService.list(null, null, null, true);
+        if (all == null) {
+            all = List.of();
+        }
+        List<PoiEntity> pois = matchPoisInMessage(message, all);
         if (pois.isEmpty()) {
-            pois = poiService.list(null, null, null, true).stream().limit(3).toList();
+            pois = poiService.list(keyword, null, null, true);
+        }
+        if (pois == null) {
+            pois = List.of();
+        }
+        if (pois.isEmpty()) {
+            AiChatResponse response = base("find_poi", text(locale,
+                    "\u6682\u672a\u5bfb\u627e\u5230\u76f8\u5173\u5730\u70b9,\u8bf7\u5c1d\u8bd5\u522b\u7684\u5730\u70b9",
+                    "No related campus place was found. Please try another place."), pois);
+            response.toolCalls.add(new AiChatResponse.ToolCall("searchPoi", Map.of("keyword", keyword)));
+            response.mapActions.add(highlight(pois));
+            return response;
         }
         AiChatResponse response = base("find_poi", text(locale,
                 "我根据你的问题找到了这些校园地点，并已在地图上高亮。",
@@ -104,6 +127,111 @@ public class MockAiService {
         response.mapActions.add(highlight(pois));
         if (!pois.isEmpty()) {
             response.mapActions.add(openDetail(pois.get(0).id));
+        }
+        return response;
+    }
+
+    private AiChatResponse routeHelp(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        List<PoiEntity> all = poiService.list(null, null, null, true);
+        Map<Long, PoiEntity> byId = new LinkedHashMap<>();
+        for (PoiEntity poi : all) {
+            byId.put(poi.id, poi);
+        }
+
+        List<PoiEntity> textMatched = matchPoisInMessage(message, all);
+        PoiEntity contextOrigin = poiById(routeContext == null ? null : routeContext.originPoiId, byId);
+        PoiEntity contextDestination = poiById(routeContext == null ? null : routeContext.destinationPoiId, byId);
+        List<PoiEntity> contextWaypoints = poisByIds(routeContext == null ? null : routeContext.waypointPoiIds, byId);
+
+        PoiEntity origin = null;
+        PoiEntity destination = null;
+        List<PoiEntity> textWaypoints = new ArrayList<>();
+        boolean textIsDestinationOnly = isDestinationOnlyRouteText(message);
+
+        if (textMatched.size() >= 2) {
+            origin = textMatched.get(0);
+            int waypointMarkerIndex = routeWaypointMarkerIndex(message);
+            if (waypointMarkerIndex >= 0) {
+                PoiEntity routeOrigin = origin;
+                List<PoiEntity> beforeWaypoints = textMatched.stream()
+                        .filter(poi -> routeMentionIndex(poi, normalizeText(message)) < waypointMarkerIndex)
+                        .filter(poi -> !samePoi(poi, routeOrigin))
+                        .toList();
+                List<PoiEntity> afterWaypointMarker = textMatched.stream()
+                        .filter(poi -> routeMentionIndex(poi, normalizeText(message)) >= waypointMarkerIndex)
+                        .toList();
+                destination = beforeWaypoints.isEmpty() ? textMatched.get(textMatched.size() - 1) : beforeWaypoints.get(beforeWaypoints.size() - 1);
+                textWaypoints.addAll(afterWaypointMarker);
+            } else {
+                destination = textMatched.get(textMatched.size() - 1);
+                textWaypoints.addAll(textMatched.subList(1, textMatched.size() - 1));
+            }
+        } else if (textMatched.size() == 1) {
+            PoiEntity textPoi = textMatched.get(0);
+            if (contextOrigin != null && (textIsDestinationOnly || contextDestination == null)) {
+                origin = contextOrigin;
+                destination = textPoi;
+            } else if (contextDestination != null) {
+                origin = textPoi;
+                destination = contextDestination;
+            } else {
+                origin = textPoi;
+            }
+        }
+
+        if (origin == null) {
+            origin = contextOrigin;
+        }
+        if (destination == null) {
+            destination = contextDestination;
+        }
+
+        List<PoiEntity> routePois = new ArrayList<>();
+        addUnique(routePois, origin);
+        for (PoiEntity waypoint : contextWaypoints) {
+            if (!samePoi(waypoint, origin) && !samePoi(waypoint, destination)) {
+                addUnique(routePois, waypoint);
+            }
+        }
+        for (PoiEntity waypoint : textWaypoints) {
+            if (!samePoi(waypoint, origin) && !samePoi(waypoint, destination)) {
+                addUnique(routePois, waypoint);
+            }
+        }
+        addUnique(routePois, destination);
+
+        boolean usedContext = contextOrigin != null || contextDestination != null || !contextWaypoints.isEmpty();
+        boolean usedText = !textMatched.isEmpty();
+        String source = usedText && usedContext ? "mixed" : usedContext ? "map_context" : "text";
+
+        if (routePois.size() < 2) {
+            routePois = all.stream().limit(2).toList();
+            source = "fallback";
+        }
+
+        String from = routePois.isEmpty() ? "start" : routePois.get(0).name;
+        String to = routePois.size() < 2 ? "destination" : routePois.get(routePois.size() - 1).name;
+        List<String> via = routePois.size() > 2
+                ? routePois.subList(1, routePois.size() - 1).stream().map(poi -> poi.name).toList()
+                : List.of();
+        AiChatResponse response = base("route_help", text(locale,
+                "\u5df2\u751f\u6210\u4ece " + from + " \u5230 " + to + " \u7684\u6821\u56ed\u8def\u7ebf\uff0c\u5e76\u6309\u987a\u5e8f\u4fdd\u7559\u9014\u7ecf\u70b9\u3002",
+                "I prepared the campus route from " + from + " to " + to + " and kept the waypoints in order."), routePois);
+        List<Long> ids = routePois.stream().map(poi -> poi.id).toList();
+        response.toolCalls.add(new AiChatResponse.ToolCall("planCampusRouteFallback", Map.of("poiIds", ids, "source", source)));
+        AiChatResponse.MapAction action = new AiChatResponse.MapAction("draw_route");
+        action.poiIds = ids;
+        action.routeMode = "AMAP_FALLBACK";
+        action.payload = new LinkedHashMap<>();
+        action.payload.put("reason", text(locale, "\u666e\u901a\u6b65\u884c\u8def\u7ebf\u515c\u5e95", "standard walking route fallback"));
+        action.payload.put("from", from);
+        action.payload.put("to", to);
+        action.payload.put("via", via);
+        action.payload.put("source", source);
+        response.mapActions.add(action);
+        response.mapActions.add(highlight(routePois));
+        if (routePois.size() > 1) {
+            response.mapActions.add(openDetail(routePois.get(routePois.size() - 1).id));
         }
         return response;
     }
@@ -154,6 +282,69 @@ public class MockAiService {
         AiChatResponse.MapAction action = new AiChatResponse.MapAction("open_poi_detail");
         action.poiId = poiId;
         return action;
+    }
+
+    private PoiEntity poiById(Long id, Map<Long, PoiEntity> byId) {
+        return id == null ? null : byId.get(id);
+    }
+
+    private List<PoiEntity> poisByIds(List<Long> ids, Map<Long, PoiEntity> byId) {
+        List<PoiEntity> pois = new ArrayList<>();
+        if (ids == null) {
+            return pois;
+        }
+        for (Long id : ids) {
+            addUnique(pois, poiById(id, byId));
+        }
+        return pois;
+    }
+
+    private void addUnique(List<PoiEntity> pois, PoiEntity poi) {
+        if (poi == null || pois.stream().anyMatch(item -> samePoi(item, poi))) {
+            return;
+        }
+        pois.add(poi);
+    }
+
+    private boolean samePoi(PoiEntity left, PoiEntity right) {
+        return left != null && right != null && left.id != null && left.id.equals(right.id);
+    }
+
+    private boolean isDestinationOnlyRouteText(String message) {
+        String normalized = normalizeText(message);
+        boolean hasOriginWord = containsAny(normalized, "from", "start", "\u4ece", "\u51fa\u53d1");
+        boolean hasDestinationWord = containsAny(normalized, "to", "go", "destination", "\u5230", "\u53bb");
+        return hasDestinationWord && !hasOriginWord;
+    }
+
+    private int routeWaypointMarkerIndex(String message) {
+        String normalized = normalizeText(message);
+        int best = Integer.MAX_VALUE;
+        for (String marker : List.of("via", "passby", "through", "\u9014\u7ecf", "\u7ecf\u8fc7")) {
+            int index = normalized.indexOf(normalizeText(marker));
+            if (index >= 0 && index < best) {
+                best = index;
+            }
+        }
+        return best == Integer.MAX_VALUE ? -1 : best;
+    }
+
+    private boolean looksLikeRouteWithContext(String message, AiChatRequest.RouteContext routeContext) {
+        if (routeContext == null) {
+            return false;
+        }
+        boolean hasContext = routeContext.originPoiId != null
+                || routeContext.destinationPoiId != null
+                || (routeContext.waypointPoiIds != null && !routeContext.waypointPoiIds.isEmpty());
+        if (!hasContext) {
+            return false;
+        }
+        if (routeContext.originPoiId != null && routeContext.destinationPoiId != null) {
+            return true;
+        }
+        String normalized = normalizeText(message);
+        return isDestinationOnlyRouteText(message)
+                || containsAny(normalized, "route", "directions", "to", "go", "\u8def\u7ebf", "\u5230", "\u53bb");
     }
 
     private boolean containsAny(String text, String... candidates) {
@@ -237,6 +428,9 @@ public class MockAiService {
     }
 
     private List<PoiEntity> matchPoisInMessage(String message, List<PoiEntity> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return List.of();
+        }
         String normalized = normalizeText(message);
         List<PoiEntity> matched = new ArrayList<>(candidates.stream()
                 .filter(poi -> normalized.contains(normalizeText(poi.name)))
@@ -254,6 +448,7 @@ public class MockAiService {
                 Map.entry("教学楼", "teaching"),
                 Map.entry("明德楼", "Mingde"),
                 Map.entry("文德楼", "Wende"),
+                Map.entry("\u5c1a\u8d24\u697c", "Shangxian"),
                 Map.entry("打印店", "print"),
                 Map.entry("食堂", "canteen"),
                 Map.entry("中苑", "Zhongyuan"),
@@ -272,6 +467,7 @@ public class MockAiService {
                 Map.entry("printer", "print"),
                 Map.entry("mingde", "Mingde"),
                 Map.entry("wende", "Wende"),
+                Map.entry("shangxian", "Shangxian"),
                 Map.entry("zhongyuan", "Zhongyuan"),
                 Map.entry("canteen", "canteen"),
                 Map.entry("clinic", "clinic"),
@@ -295,7 +491,7 @@ public class MockAiService {
         }
         return matched.stream()
                 .sorted(Comparator.comparingInt(poi -> routeMentionIndex(poi, normalized)))
-                .limit(2)
+                .limit(6)
                 .toList();
     }
 
@@ -326,6 +522,7 @@ public class MockAiService {
                 Map.entry("实验楼", "teaching"),
                 Map.entry("明德楼", "Mingde"),
                 Map.entry("文德楼", "Wende"),
+                Map.entry("\u5c1a\u8d24\u697c", "Shangxian"),
                 Map.entry("西苑", "Xiyuan"),
                 Map.entry("东苑", "Dongyuan"),
                 Map.entry("中苑", "Zhongyuan"),
@@ -346,6 +543,7 @@ public class MockAiService {
                 Map.entry("zhongyuan", "Zhongyuan"),
                 Map.entry("mingde", "Mingde"),
                 Map.entry("wende", "Wende"),
+                Map.entry("shangxian", "Shangxian"),
                 Map.entry("hospital", "clinic"),
                 Map.entry("clinic", "clinic"),
                 Map.entry("teaching", "teaching"),
@@ -382,6 +580,9 @@ public class MockAiService {
         }
         if (containsAny(searchable, "wende", "文德楼")) {
             markers.addAll(List.of("文德楼", "wende", "教学楼"));
+        }
+        if (containsAny(searchable, "shangxian", "\u5c1a\u8d24\u697c")) {
+            markers.addAll(List.of("\u5c1a\u8d24\u697c", "\u5c1a\u8d24", "shangxian", "teaching"));
         }
         if (containsAny(searchable, "print", "打印")) {
             markers.addAll(List.of("打印店", "打印", "printshop", "printer", "print"));
@@ -447,6 +648,7 @@ public class MockAiService {
                 Map.entry("教学楼", "teaching"),
                 Map.entry("明德楼", "Mingde"),
                 Map.entry("文德楼", "Wende"),
+                Map.entry("\u5c1a\u8d24\u697c", "Shangxian"),
                 Map.entry("打印店", "print"),
                 Map.entry("打印", "print"),
                 Map.entry("食堂", "canteen"),
@@ -486,6 +688,7 @@ public class MockAiService {
                 Map.entry("实验楼", "teaching"),
                 Map.entry("明德楼", "Mingde"),
                 Map.entry("文德楼", "Wende"),
+                Map.entry("\u5c1a\u8d24\u697c", "Shangxian"),
                 Map.entry("西苑", "Xiyuan"),
                 Map.entry("东苑", "Dongyuan"),
                 Map.entry("中苑", "Zhongyuan"),

@@ -2,6 +2,7 @@ package com.smartcampus.navigation.poi;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.smartcampus.navigation.common.BizException;
+import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -95,6 +96,29 @@ public class PoiService {
         return get(id);
     }
 
+    public PoiEntity updateFromFeedbackReview(Long id, String status, String remark, Boolean enabled, BigDecimal longitude, BigDecimal latitude) {
+        PoiEntity entity = get(id);
+        if (StringUtils.hasText(status)) {
+            entity.openStatus = status;
+        }
+        if (StringUtils.hasText(remark)) {
+            entity.remark = remark;
+        }
+        if (enabled != null) {
+            entity.enabled = enabled;
+        }
+        if (longitude != null || latitude != null) {
+            if (longitude == null || latitude == null) {
+                throw new BizException("POI coordinate update requires both longitude and latitude");
+            }
+            validateCoordinate(longitude, latitude);
+            entity.longitude = longitude;
+            entity.latitude = latitude;
+        }
+        poiMapper.updateById(entity);
+        return get(id);
+    }
+
     private void apply(PoiEntity entity, PoiRequest request) {
         entity.name = request.name;
         entity.category = request.category;
@@ -108,5 +132,12 @@ public class PoiService {
         entity.enabled = request.enabled == null || request.enabled;
         entity.mapRank = request.mapRank;
         entity.sourceUrl = request.sourceUrl == null ? "" : request.sourceUrl;
+    }
+
+    private void validateCoordinate(BigDecimal longitude, BigDecimal latitude) {
+        if (longitude.compareTo(BigDecimal.valueOf(-180)) < 0 || longitude.compareTo(BigDecimal.valueOf(180)) > 0
+                || latitude.compareTo(BigDecimal.valueOf(-90)) < 0 || latitude.compareTo(BigDecimal.valueOf(90)) > 0) {
+            throw new BizException("POI coordinate is outside valid longitude or latitude range");
+        }
     }
 }

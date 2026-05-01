@@ -1,32 +1,29 @@
 <template>
-  <section class="map-shell" :aria-label="$t('nav.map')">
+  <section class="map-shell" :aria-label="$t('nav.map')" @click="closeContextMenu">
     <div ref="amapContainer" class="map-placeholder" :class="{ active: amapReady }"></div>
     <div v-if="amapFallbackReason" class="map-fallback-badge">{{ amapFallbackReason }}</div>
 
     <template v-if="!amapReady">
       <div class="map-road main"></div>
       <div class="map-road cross"></div>
-      <svg v-if="routeLine" class="route-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <svg v-if="routeLines.length" class="route-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <line
-          :x1="routeLine.from.x"
-          :y1="routeLine.from.y"
-          :x2="routeLine.to.x"
-          :y2="routeLine.to.y"
+          v-for="line in routeLines"
+          :key="line.key"
+          :x1="line.from.x"
+          :y1="line.from.y"
+          :x2="line.to.x"
+          :y2="line.to.y"
         />
       </svg>
       <span
-        v-if="routeLine"
-        class="route-endpoint start"
-        :style="{ left: `${routeLine.from.x}%`, top: `${routeLine.from.y}%` }"
+        v-for="point in routePoints"
+        :key="`route-point-${point.id}`"
+        class="route-endpoint"
+        :class="point.type"
+        :style="{ left: `${point.x}%`, top: `${point.y}%` }"
       >
-        {{ $t('map.start') }}
-      </span>
-      <span
-        v-if="routeLine"
-        class="route-endpoint end"
-        :style="{ left: `${routeLine.to.x}%`, top: `${routeLine.to.y}%` }"
-      >
-        {{ $t('map.end') }}
+        {{ point.label }}
       </span>
       <button
         v-for="poi in normalizedPois"
@@ -37,6 +34,7 @@
         type="button"
         :aria-label="poi.name"
         @click="$emit('select', poi)"
+        @contextmenu.prevent.stop="openContextMenu(poi, $event)"
       >
         <span>{{ categoryInitial(poi.category) }}</span>
       </button>
@@ -49,6 +47,19 @@
         {{ poi.name }}
       </span>
     </template>
+    <div
+      v-if="contextMenu"
+      class="map-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <strong>{{ contextMenu.poi.name }}</strong>
+      <button type="button" @click="emitRouteAction('origin')">{{ contextLabel('origin') }}</button>
+      <button type="button" @click="emitRouteAction('destination')">{{ contextLabel('destination') }}</button>
+      <button type="button" @click="emitRouteAction('waypoint')">{{ contextLabel('waypoint') }}</button>
+      <button type="button" @click="emitRouteAction('clear')">{{ contextLabel('clear') }}</button>
+    </div>
   </section>
 </template>
 
@@ -64,17 +75,21 @@ const props = defineProps({
   routeAction: { type: Object, default: null }
 })
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'route-context'])
 const { locale } = useI18n()
 const amapContainer = ref(null)
 const amapReady = ref(false)
 const amapFallbackReason = ref('')
+const contextMenu = ref(null)
 let map
 let AMapRef
 let walking
 let fallbackRouteLine
 let startMarker
 let endMarker
+let walkingRoutes = []
+let fallbackRouteLines = []
+let routePointMarkers = []
 let markers = []
 
 const normalizedPois = computed(() => {
@@ -97,10 +112,20 @@ const normalizedPois = computed(() => {
   })
 })
 
-const routeLine = computed(() => {
+const routePoints = computed(() => routePoisByAction().map((poi, index, list) => ({
+  ...poi,
+  type: index === 0 ? 'start' : index === list.length - 1 ? 'end' : 'waypoint',
+  label: routePointLabel(index, list.length)
+})))
+
+const routeLines = computed(() => {
   const routePois = routePoisByAction()
-  if (routePois.length < 2) return null
-  return { from: routePois[0], to: routePois[routePois.length - 1] }
+  if (routePois.length < 2) return []
+  return routePois.slice(0, -1).map((poi, index) => ({
+    key: `${poi.id}-${routePois[index + 1].id}`,
+    from: poi,
+    to: routePois[index + 1]
+  }))
 })
 
 onMounted(async () => {
@@ -158,6 +183,7 @@ function initAmap() {
     resizeEnable: true,
     mapStyle: 'amap://styles/normal'
   })
+  map.on('click', closeContextMenu)
   if (AMapRef.Scale) map.addControl(new AMapRef.Scale())
   if (AMapRef.ToolBar) map.addControl(new AMapRef.ToolBar({ position: 'RT' }))
   renderMarkers()
@@ -175,7 +201,11 @@ function renderMarkers() {
       anchor: 'bottom-center',
       content: markerContent(poi)
     })
-    marker.on('click', () => emit('select', poi))
+    marker.on('click', () => {
+      closeContextMenu()
+      emit('select', poi)
+    })
+    marker.on('rightclick', (event) => openContextMenu(poi, event))
     marker.setMap(map)
     return marker
   })
@@ -185,6 +215,8 @@ function renderRoute() {
   clearRoute()
   const routePois = routePoisByAction()
   if (!map || !AMapRef || routePois.length < 2) return
+  renderSegmentedRoute(routePois)
+  return
   const from = poiLngLat(routePois[0])
   const to = poiLngLat(routePois[routePois.length - 1])
 
@@ -218,6 +250,38 @@ function renderRoute() {
   focusRoute()
 }
 
+function renderSegmentedRoute(routePois) {
+  routePois.forEach((poi, index) => {
+    const marker = new AMapRef.Marker({
+      position: poiLngLat(poi),
+      anchor: 'bottom-center',
+      content: endpointContent(routePointLabel(index, routePois.length), index === 0 ? 'start' : index === routePois.length - 1 ? 'end' : 'waypoint')
+    })
+    marker.setMap(map)
+    routePointMarkers.push(marker)
+  })
+
+  routePois.slice(0, -1).forEach((poi, index) => {
+    const from = poiLngLat(poi)
+    const to = poiLngLat(routePois[index + 1])
+    if (AMapRef.Walking) {
+      const segment = new AMapRef.Walking({
+        map,
+        hideMarkers: true,
+        autoFitView: false
+      })
+      walkingRoutes.push(segment)
+      segment.search(from, to, (status) => {
+        if (status !== 'complete') drawFallbackRoute(from, to)
+        focusRoute()
+      })
+      return
+    }
+    drawFallbackRoute(from, to)
+  })
+  focusRoute()
+}
+
 function drawFallbackRoute(from, to) {
   if (!AMapRef?.Polyline) return
   fallbackRouteLine = new AMapRef.Polyline({
@@ -230,13 +294,22 @@ function drawFallbackRoute(from, to) {
     zIndex: 80
   })
   fallbackRouteLine.setMap(map)
+  fallbackRouteLines.push(fallbackRouteLine)
 }
 
 function clearRoute() {
+  walkingRoutes.forEach((segment) => {
+    if (segment?.clear) segment.clear()
+  })
+  fallbackRouteLines.forEach((line) => line.setMap(null))
+  routePointMarkers.forEach((marker) => marker.setMap(null))
   if (walking?.clear) walking.clear()
   if (fallbackRouteLine) fallbackRouteLine.setMap(null)
   if (startMarker) startMarker.setMap(null)
   if (endMarker) endMarker.setMap(null)
+  walkingRoutes = []
+  fallbackRouteLines = []
+  routePointMarkers = []
   walking = null
   fallbackRouteLine = null
   startMarker = null
@@ -271,7 +344,35 @@ function focusLngLats(points) {
 function routePoisByAction() {
   const ids = props.routeAction?.poiIds || []
   if (ids.length < 2) return []
-  return ids.map((id) => props.pois.find((poi) => poi.id === id)).filter((poi) => poi && isValidCoordinate(poi))
+  return ids
+    .map((id) => props.pois.find((poi) => poi.id === id))
+    .filter((poi) => poi && isValidCoordinate(poi))
+    .map((poi) => normalizedPois.value.find((item) => item.id === poi.id) || poi)
+}
+
+function openContextMenu(poi, event) {
+  if (!poi?.id || !amapContainer.value) return
+  const source = event?.originEvent || event
+  source?.preventDefault?.()
+  const rect = amapContainer.value.getBoundingClientRect()
+  const pixel = event?.pixel
+  const rawX = Number.isFinite(source?.clientX) ? source.clientX - rect.left : pixel?.x ?? pixel?.getX?.() ?? 20
+  const rawY = Number.isFinite(source?.clientY) ? source.clientY - rect.top : pixel?.y ?? pixel?.getY?.() ?? 20
+  contextMenu.value = {
+    poi,
+    x: Math.min(Math.max(rawX, 12), Math.max(rect.width - 190, 12)),
+    y: Math.min(Math.max(rawY, 12), Math.max(rect.height - 190, 12))
+  }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+function emitRouteAction(action) {
+  if (!contextMenu.value) return
+  emit('route-context', { action, poi: contextMenu.value.poi })
+  closeContextMenu()
 }
 
 function isActivePoi(id) {
@@ -296,6 +397,28 @@ function markerContent(poi) {
 
 function endpointContent(label, type) {
   return `<div class="amap-route-endpoint ${type}">${escapeHtml(label)}</div>`
+}
+
+function routePointLabel(index, total) {
+  if (index === 0) return locale.value === 'en-US' ? 'Start' : '\u8d77\u70b9'
+  if (index === total - 1) return locale.value === 'en-US' ? 'End' : '\u7ec8\u70b9'
+  return locale.value === 'en-US' ? `Via ${index}` : `\u9014\u7ecf${index}`
+}
+
+function contextLabel(key) {
+  const zh = {
+    origin: '\u8bbe\u4e3a\u8d77\u70b9',
+    destination: '\u8bbe\u4e3a\u7ec8\u70b9',
+    waypoint: '\u6dfb\u52a0\u9014\u7ecf\u70b9',
+    clear: '\u6e05\u7a7a\u8def\u7ebf\u8349\u7a3f'
+  }
+  const en = {
+    origin: 'Set as Start',
+    destination: 'Set as End',
+    waypoint: 'Add Waypoint',
+    clear: 'Clear Route Draft'
+  }
+  return (locale.value === 'en-US' ? en : zh)[key] || key
 }
 
 function categoryInitial(category) {
