@@ -7,6 +7,13 @@
             <span>{{ localText('chatPanel') }}</span>
             <el-button size="small" plain @click="clearPageChat">{{ localText('clearChat') }}</el-button>
           </div>
+          <div class="route-mode-switch">
+            <span>{{ localText('routeMode') }}</span>
+            <el-radio-group v-model="routeMode" size="small" :aria-label="localText('routeMode')">
+              <el-radio-button value="walking">{{ localText('walkMode') }}</el-radio-button>
+              <el-radio-button value="cycling">{{ localText('bikeMode') }}</el-radio-button>
+            </el-radio-group>
+          </div>
           <el-input
             ref="questionInputRef"
             v-model="question"
@@ -112,20 +119,48 @@
           :highlighted-ids="highlightedIds"
           :selected-poi-id="selectedPoi?.id"
           :route-action="effectiveRouteAction"
+          :route-mode="routeMode"
           @select="selectPoi"
           @route-context="handleRouteContextAction"
         />
         <section v-if="selectedPoi" class="panel detail-panel">
-          <div>
-            <h3>{{ selectedPoi.name }}</h3>
-            <p>{{ selectedPoi.locationText }} · {{ selectedPoi.openStatus }} · {{ selectedPoi.tags }}</p>
-            <p>{{ selectedPoi.remark }}</p>
-            <p v-if="aiContextNote" class="ai-context-note">{{ aiContextNote }}</p>
+          <div class="detail-copy">
+            <div class="detail-head">
+              <div>
+                <span class="detail-kicker">{{ selectedPoi.category || localText('campusPlace') }}</span>
+                <h3>{{ selectedPoi.name }}</h3>
+              </div>
+              <el-tag size="small" type="success" effect="plain">{{ selectedPoiDetail.status }}</el-tag>
+            </div>
+            <p class="detail-location">{{ selectedPoi.locationText }}</p>
+            <div class="detail-info-grid">
+              <section v-if="selectedPoiDetail.intro" class="detail-info-item">
+                <span class="detail-info-label">{{ localText('introLabel') }}</span>
+                <p>{{ selectedPoiDetail.intro }}</p>
+              </section>
+              <section v-if="selectedPoiDetail.hours" class="detail-info-item">
+                <span class="detail-info-label">{{ localText('hoursLabel') }}</span>
+                <p>{{ selectedPoiDetail.hours }}</p>
+              </section>
+            </div>
+            <div v-if="selectedPoiDetail.tags.length" class="detail-tags" :aria-label="localText('tagsLabel')">
+              <span v-for="tag in selectedPoiDetail.tags" :key="tag">{{ tag }}</span>
+            </div>
+            <p v-if="recommendationNote" class="ai-context-note">
+              <strong>{{ aiContextLabel }}</strong>
+              {{ recommendationNote }}
+            </p>
           </div>
-          <div>
-            <el-button type="primary" @click="feedbackVisible = true">{{ $t('map.submitFeedback') }}</el-button>
-            <el-button @click="simulateRoute">{{ $t('map.routeFallback') }}</el-button>
-          </div>
+          <aside class="detail-media">
+            <img
+              :src="selectedPoiImage.url"
+              :alt="selectedPoiImage.alt"
+              :data-image-key="selectedPoiImage.key"
+              loading="lazy"
+              @error="handlePoiImageError"
+            >
+            <el-button type="primary" class="detail-feedback-button" @click="feedbackVisible = true">{{ $t('map.submitFeedback') }}</el-button>
+          </aside>
         </section>
       </section>
     </div>
@@ -179,6 +214,26 @@ const messagesRef = ref(null)
 const feedbackVisible = ref(false)
 const feedback = reactive({ type: 'INFO_ERROR', content: '' })
 const messages = ref(defaultMessages())
+const failedPoiImageKeys = ref([])
+const routeMode = ref('walking')
+
+const CAMPUS_IMAGE = {
+  key: 'campus',
+  url: 'https://www.nuist.edu.cn/images/nav-pic.jpg',
+  alt: 'NUIST campus'
+}
+
+const LIBRARY_IMAGE = {
+  key: 'library',
+  url: 'https://lib.nuist.edu.cn/img/list_banner.jpg',
+  alt: 'NUIST Library'
+}
+
+const WEATHER_IMAGE = {
+  key: 'weather',
+  url: 'https://www.nuist.edu.cn/images/s7-tlbg.png',
+  alt: 'NUIST weather campus view'
+}
 
 const resultPois = computed(() => lastResponse.value?.pois || [])
 const noteResults = computed(() => lastResponse.value?.notes || [])
@@ -257,6 +312,16 @@ const aiContextNote = computed(() => {
   if (lastResponse.value.intent === 'recommend_place') return t('map.recommendationReason', { reply: lastResponse.value.reply })
   return t('map.aiAction', { reply: lastResponse.value.reply })
 })
+const selectedPoiDetail = computed(() => buildPoiDetail(selectedPoi.value))
+const selectedPoiImage = computed(() => {
+  const image = choosePoiImage(selectedPoi.value)
+  if (image.key !== CAMPUS_IMAGE.key && failedPoiImageKeys.value.includes(image.key)) {
+    return CAMPUS_IMAGE
+  }
+  return image
+})
+const recommendationNote = computed(() => stripContextPrefix(aiContextNote.value))
+const aiContextLabel = computed(() => (routeSummary.value ? localText('routeContext') : localText('recommendReason')))
 
 onMounted(async () => {
   await loadPois()
@@ -279,7 +344,8 @@ watch(
     selectedPoiId: selectedPoi.value?.id || null,
     isolateSelectedPoi: isolateSelectedPoi.value,
     shelterCandidatesDismissed: shelterCandidatesDismissed.value,
-    question: question.value
+    question: question.value,
+    routeMode: routeMode.value
   }),
   persistChatState,
   { deep: true }
@@ -327,6 +393,9 @@ function restoreChatState() {
     if (typeof state.question === 'string') {
       question.value = state.question
     }
+    if (['walking', 'cycling'].includes(state.routeMode)) {
+      routeMode.value = state.routeMode
+    }
     const restoredPoi = findPoiById(state.selectedPoiId)
     if (restoredPoi) {
       selectedPoi.value = restoredPoi
@@ -346,7 +415,8 @@ function persistChatState() {
       selectedPoiId: selectedPoi.value?.id || null,
       isolateSelectedPoi: isolateSelectedPoi.value,
       shelterCandidatesDismissed: shelterCandidatesDismissed.value,
-      question: question.value
+      question: question.value,
+      routeMode: routeMode.value
     }))
   } catch {
     // Ignore storage failures; the chat still works for the current render.
@@ -606,16 +676,6 @@ function looksLikeRouteText(text) {
   return ['from', 'to', 'go', 'route', 'directions', 'via', 'passby', '\u4ece', '\u5230', '\u53bb', '\u8def\u7ebf', '\u9014\u7ecf'].some((item) => normalized.includes(item))
 }
 
-function simulateRoute() {
-  if (!selectedPoi.value) return
-  messages.value.push({
-    id: Date.now(),
-    role: 'assistant',
-    content: t('map.selectedRouteTarget', { name: selectedPoi.value.name })
-  })
-  scrollMessagesToBottom()
-}
-
 async function submitFeedback() {
   if (!selectedPoi.value || !feedback.content) {
     ElMessage.warning(t('map.feedbackRequired'))
@@ -636,6 +696,90 @@ function findPoiById(id) {
   if (!id) return null
   const pools = [resultPois.value, pois.value, routeDraft.waypoints, [routeDraft.origin, routeDraft.destination, selectedPoi.value]]
   return pools.flat().find((poi) => poi?.id === id) || null
+}
+
+function buildPoiDetail(poi) {
+  const parsed = parsePoiRemark(poi?.remark)
+  return {
+    intro: parsed.intro || poi?.remark || '',
+    hours: parsed.hours,
+    tags: splitPoiTags(poi?.tags),
+    status: openStatusText(poi?.openStatus)
+  }
+}
+
+function parsePoiRemark(remark) {
+  const raw = `${remark || ''}`.trim()
+  if (!raw) return { intro: '', hours: '' }
+
+  const normalized = raw.replace(/\s+/g, ' ')
+  const labeled = normalized.match(/^Intro:\s*(.*?)(?:\s+Hours:\s*(.*))?$/i)
+  if (labeled) {
+    return {
+      intro: labeled[1]?.trim() || '',
+      hours: labeled[2]?.trim() || ''
+    }
+  }
+
+  const zhLabeled = normalized.match(/^简介[:：]\s*(.*?)(?:\s+开放时间[:：]\s*(.*))?$/)
+  if (zhLabeled) {
+    return {
+      intro: zhLabeled[1]?.trim() || '',
+      hours: zhLabeled[2]?.trim() || ''
+    }
+  }
+
+  const hours = normalized.match(/^(.*?)(?:\s+Hours?:\s*|\s+Opening hours?:\s*)(.*)$/i)
+  if (hours) {
+    return {
+      intro: hours[1]?.trim() || '',
+      hours: hours[2]?.trim() || ''
+    }
+  }
+
+  return { intro: raw, hours: '' }
+}
+
+function splitPoiTags(tags) {
+  return `${tags || ''}`
+    .split(/[,，、;\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 7)
+}
+
+function openStatusText(status) {
+  const value = `${status || ''}`.toUpperCase()
+  if (locale.value === 'en-US') {
+    if (value === 'OPEN') return 'Open'
+    if (value === 'CLOSED') return 'Closed'
+    return status || 'Unknown'
+  }
+  if (value === 'OPEN') return '开放中'
+  if (value === 'CLOSED') return '已关闭'
+  return status || '状态未知'
+}
+
+function choosePoiImage(poi) {
+  const text = `${poi?.name || ''} ${poi?.category || ''} ${poi?.tags || ''}`.toLowerCase()
+  if (/(library|reading|study|图书|阅览|自习)/.test(text)) return LIBRARY_IMAGE
+  if (/(weather|meteorology|radar|气象|雷达|观测)/.test(text)) return WEATHER_IMAGE
+  return CAMPUS_IMAGE
+}
+
+function handlePoiImageError(event) {
+  const key = event?.target?.dataset?.imageKey
+  if (!key || failedPoiImageKeys.value.includes(key)) return
+  failedPoiImageKeys.value = [...failedPoiImageKeys.value, key]
+}
+
+function stripContextPrefix(text) {
+  return `${text || ''}`
+    .replace(/^Recommendation reason:\s*/i, '')
+    .replace(/^推荐理由[:：]\s*/, '')
+    .replace(/^AI action:\s*/i, '')
+    .replace(/^AI 动作[:：]\s*/, '')
+    .trim()
 }
 
 function localText(key) {
@@ -660,7 +804,16 @@ function localText(key) {
     fromRoute: '\u8ddd\u8def\u7ebf',
     fromStart: '\u8ddd\u8d77\u70b9',
     chatPanel: 'AI \u804a\u5929',
-    clearChat: '\u6e05\u9664\u804a\u5929'
+    clearChat: '\u6e05\u9664\u804a\u5929',
+    routeMode: '\u51fa\u884c\u65b9\u5f0f',
+    walkMode: '\u6b65\u884c',
+    bikeMode: '\u9a91\u884c',
+    campusPlace: '\u6821\u56ed\u5730\u70b9',
+    introLabel: '\u7b80\u4ecb',
+    hoursLabel: '\u5f00\u653e\u65f6\u95f4',
+    tagsLabel: '\u6807\u7b7e',
+    recommendReason: '\u63a8\u8350\u7406\u7531',
+    routeContext: '\u8def\u7ebf\u8bf4\u660e'
   }
   const en = {
     routeDraft: 'Route Draft',
@@ -683,7 +836,16 @@ function localText(key) {
     fromRoute: 'from route',
     fromStart: 'from start',
     chatPanel: 'AI Chat',
-    clearChat: 'Clear Chat'
+    clearChat: 'Clear Chat',
+    routeMode: 'Travel Mode',
+    walkMode: 'Walk',
+    bikeMode: 'Bike',
+    campusPlace: 'Campus Place',
+    introLabel: 'Intro',
+    hoursLabel: 'Opening Hours',
+    tagsLabel: 'Tags',
+    recommendReason: 'Recommendation reason',
+    routeContext: 'Route context'
   }
   return (locale.value === 'en-US' ? en : zh)[key] || key
 }

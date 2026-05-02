@@ -1,6 +1,6 @@
 let amapPromise
 
-const DEFAULT_PLUGINS = ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geocoder', 'AMap.Walking']
+const DEFAULT_PLUGINS = ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geocoder', 'AMap.Walking', 'AMap.Riding']
 
 export function loadAmap(plugins = DEFAULT_PLUGINS) {
   const key = import.meta.env.VITE_AMAP_KEY

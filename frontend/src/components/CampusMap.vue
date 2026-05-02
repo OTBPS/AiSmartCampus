@@ -72,7 +72,8 @@ const props = defineProps({
   pois: { type: Array, default: () => [] },
   highlightedIds: { type: Array, default: () => [] },
   selectedPoiId: { type: Number, default: null },
-  routeAction: { type: Object, default: null }
+  routeAction: { type: Object, default: null },
+  routeMode: { type: String, default: 'walking' }
 })
 
 const emit = defineEmits(['select', 'route-context'])
@@ -83,11 +84,11 @@ const amapFallbackReason = ref('')
 const contextMenu = ref(null)
 let map
 let AMapRef
-let walking
+let routePlanner
 let fallbackRouteLine
 let startMarker
 let endMarker
-let walkingRoutes = []
+let routePlanners = []
 let fallbackRouteLines = []
 let routePointMarkers = []
 let markers = []
@@ -156,7 +157,7 @@ watch(
 )
 
 watch(
-  () => props.routeAction,
+  () => [props.routeAction, props.routeMode],
   () => {
     if (amapReady.value) renderRoute()
   },
@@ -234,13 +235,10 @@ function renderRoute() {
   startMarker.setMap(map)
   endMarker.setMap(map)
 
-  if (AMapRef.Walking) {
-    walking = new AMapRef.Walking({
-      map,
-      hideMarkers: true,
-      autoFitView: false
-    })
-    walking.search(from, to, (status) => {
+  const RoutePlanner = routePlannerCtor()
+  if (RoutePlanner) {
+    routePlanner = new RoutePlanner(routePlannerOptions())
+    routePlanner.search(from, to, (status) => {
       if (status !== 'complete') drawFallbackRoute(from, to)
       focusRoute()
     })
@@ -252,6 +250,7 @@ function renderRoute() {
 }
 
 function renderSegmentedRoute(routePois) {
+  const RoutePlanner = routePlannerCtor()
   routePois.forEach((poi, index) => {
     const marker = new AMapRef.Marker({
       position: poiLngLat(poi),
@@ -269,13 +268,9 @@ function renderSegmentedRoute(routePois) {
   routePois.slice(0, -1).forEach((poi, index) => {
     const from = poiLngLat(poi)
     const to = poiLngLat(routePois[index + 1])
-    if (AMapRef.Walking) {
-      const segment = new AMapRef.Walking({
-        map,
-        hideMarkers: true,
-        autoFitView: false
-      })
-      walkingRoutes.push(segment)
+    if (RoutePlanner) {
+      const segment = new RoutePlanner(routePlannerOptions())
+      routePlanners.push(segment)
       segment.search(from, to, (status) => {
         if (status !== 'complete') drawFallbackRoute(from, to)
         focusRoute()
@@ -287,11 +282,25 @@ function renderSegmentedRoute(routePois) {
   focusRoute()
 }
 
+function routePlannerCtor() {
+  if (!AMapRef) return null
+  if (props.routeMode === 'cycling') return AMapRef.Riding || AMapRef.Walking || null
+  return AMapRef.Walking || null
+}
+
+function routePlannerOptions() {
+  return {
+    map,
+    hideMarkers: true,
+    autoFitView: false
+  }
+}
+
 function drawFallbackRoute(from, to) {
   if (!AMapRef?.Polyline) return
   fallbackRouteLine = new AMapRef.Polyline({
     path: [from, to],
-    strokeColor: '#0f766e',
+    strokeColor: props.routeMode === 'cycling' ? '#2563eb' : '#0f766e',
     strokeOpacity: 0.9,
     strokeWeight: 7,
     strokeStyle: 'dashed',
@@ -303,19 +312,19 @@ function drawFallbackRoute(from, to) {
 }
 
 function clearRoute() {
-  walkingRoutes.forEach((segment) => {
+  routePlanners.forEach((segment) => {
     if (segment?.clear) segment.clear()
   })
   fallbackRouteLines.forEach((line) => line.setMap(null))
   routePointMarkers.forEach((marker) => marker.setMap(null))
-  if (walking?.clear) walking.clear()
+  if (routePlanner?.clear) routePlanner.clear()
   if (fallbackRouteLine) fallbackRouteLine.setMap(null)
   if (startMarker) startMarker.setMap(null)
   if (endMarker) endMarker.setMap(null)
-  walkingRoutes = []
+  routePlanners = []
   fallbackRouteLines = []
   routePointMarkers = []
-  walking = null
+  routePlanner = null
   fallbackRouteLine = null
   startMarker = null
   endMarker = null

@@ -37,7 +37,7 @@
             </div>
             <div>
               <strong>{{ valueOrDash(weather.now.temp) }}°</strong>
-              <span>{{ weather.now.text || localText('unknown') }}</span>
+              <span>{{ displayWeatherText(weather.now.text) }}</span>
             </div>
           </div>
           <p>{{ localText('feelsLike') }} {{ valueOrDash(weather.now.feelsLike) }}° · {{ localText('updated') }} {{ formatDateTime(weather.updateTime) }}</p>
@@ -49,7 +49,7 @@
           </div>
           <div>
             <dt>{{ localText('wind') }}</dt>
-            <dd>{{ weather.now.windDir || '-' }} {{ weather.now.windScale || '-' }}</dd>
+            <dd>{{ displayWindDir(weather.now.windDir) }} {{ weather.now.windScale || '-' }}</dd>
           </div>
           <div>
             <dt>{{ localText('precip') }}</dt>
@@ -96,8 +96,8 @@
             :class="item.tone"
           >
             <el-tag size="small" effect="plain">{{ adviceType(item.type) }}</el-tag>
-            <h3>{{ item.title }}</h3>
-            <p>{{ item.detail }}</p>
+            <h3>{{ recommendationTitle(item) }}</h3>
+            <p>{{ recommendationDetail(item) }}</p>
             <button
               v-if="item.poiId"
               class="weather-map-link"
@@ -123,7 +123,7 @@
           <article v-for="day in weather.daily" :key="day.fxDate" class="weather-day">
             <span>{{ formatDay(day.fxDate) }}</span>
             <strong>{{ valueOrDash(day.tempMin) }}° / {{ valueOrDash(day.tempMax) }}°</strong>
-            <p>{{ day.textDay }} · {{ day.windDirDay }} {{ day.windScaleDay }}</p>
+            <p>{{ displayDailySummary(day) }}</p>
             <small>UV {{ valueOrDash(day.uvIndex) }} · {{ valueOrDash(day.precip) }} mm</small>
           </article>
         </div>
@@ -135,7 +135,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -168,6 +168,10 @@ onMounted(async () => {
   await Promise.all([searchPois(''), loadWeather()])
 })
 
+watch(locale, () => {
+  if (weather.value) loadWeather()
+})
+
 async function loadWeather() {
   loading.value = true
   error.value = ''
@@ -194,6 +198,46 @@ async function searchPois(keyword) {
 
 function openMap(poiId) {
   router.push({ path: '/map-chat', query: { poiId } })
+}
+
+function displayWeatherText(value) {
+  if (!value) return localText('unknown')
+  if (locale.value !== 'en-US') return value
+  return weatherTextMap[value] || value
+}
+
+function displayWindDir(value) {
+  if (!value) return '-'
+  if (locale.value !== 'en-US') return value
+  return windDirectionMap[value] || value
+}
+
+function displayDailySummary(day) {
+  const text = displayWeatherText(day.textDay)
+  const wind = displayWindDir(day.windDirDay)
+  return `${text} · ${wind} ${day.windScaleDay || '-'}`
+}
+
+function recommendationTitle(item) {
+  if (locale.value !== 'en-US' || !containsCjk(item.title)) return item.title
+  return recommendationFallback(item).title
+}
+
+function recommendationDetail(item) {
+  if (locale.value !== 'en-US' || !containsCjk(item.detail)) return item.detail
+  return recommendationFallback(item).detail
+}
+
+function recommendationFallback(item) {
+  const key = `${item.type}:${item.tone}`
+  return recommendationFallbacks[key] || recommendationFallbacks[item.type] || {
+    title: item.title,
+    detail: item.detail
+  }
+}
+
+function containsCjk(value) {
+  return /[\u3400-\u9fff]/.test(`${value || ''}`)
 }
 
 function weatherIconFor(item) {
@@ -241,6 +285,82 @@ function formatDateTime(value) {
 function adviceType(type) {
   const labels = localText('adviceTypes')
   return labels[type] || type
+}
+
+const weatherTextMap = {
+  晴: 'Sunny',
+  多云: 'Cloudy',
+  少云: 'Partly cloudy',
+  晴间多云: 'Mostly sunny',
+  阴: 'Overcast',
+  小雨: 'Light rain',
+  中雨: 'Moderate rain',
+  大雨: 'Heavy rain',
+  暴雨: 'Rainstorm',
+  阵雨: 'Shower',
+  雷阵雨: 'Thunder shower',
+  雨: 'Rain',
+  小雪: 'Light snow',
+  中雪: 'Moderate snow',
+  大雪: 'Heavy snow',
+  雪: 'Snow',
+  雾: 'Fog',
+  霾: 'Haze'
+}
+
+const windDirectionMap = {
+  N: 'North wind',
+  NNE: 'North-northeast wind',
+  NE: 'Northeast wind',
+  ENE: 'East-northeast wind',
+  E: 'East wind',
+  ESE: 'East-southeast wind',
+  SE: 'Southeast wind',
+  SSE: 'South-southeast wind',
+  S: 'South wind',
+  SSW: 'South-southwest wind',
+  SW: 'Southwest wind',
+  WSW: 'West-southwest wind',
+  W: 'West wind',
+  WNW: 'West-northwest wind',
+  NW: 'Northwest wind',
+  NNW: 'North-northwest wind',
+  北风: 'North wind',
+  东北风: 'Northeast wind',
+  东风: 'East wind',
+  东南风: 'Southeast wind',
+  南风: 'South wind',
+  西南风: 'Southwest wind',
+  西风: 'West wind',
+  西北风: 'Northwest wind',
+  无持续风向: 'Variable wind'
+}
+
+const recommendationFallbacks = {
+  'travel:warn': {
+    title: 'Rain-friendly route',
+    detail: 'Prioritize sheltered corridors and leave extra walking time.'
+  },
+  'travel:cool': {
+    title: 'Reduce exposed walking',
+    detail: 'Wind or low temperature can make open paths uncomfortable; prefer direct routes.'
+  },
+  'study:hot': {
+    title: 'Indoor study is safer',
+    detail: 'High temperature makes long outdoor stays uncomfortable; choose cool study spaces.'
+  },
+  'sport:good': {
+    title: 'Outdoor activity window',
+    detail: 'The next few hours look stable for outdoor exercise or campus observation.'
+  },
+  'place:map': {
+    title: 'View this place on the AI map',
+    detail: 'Open the selected POI on the AI map to combine weather and navigation context.'
+  },
+  campus: {
+    title: 'Campus weather is steady',
+    detail: 'No strong weather constraint detected; plan routes by time and destination.'
+  }
 }
 
 function localText(key) {
