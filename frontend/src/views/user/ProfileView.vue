@@ -54,6 +54,37 @@
           </el-table-column>
         </el-table>
       </section>
+      <section class="table-panel profile-notes-panel">
+        <div class="profile-table-head">
+          <div class="profile-head-copy">
+            <h3>{{ localText('discoverNotes') }}</h3>
+            <span>{{ localText('notesTip') }}</span>
+          </div>
+        </div>
+        <el-radio-group v-model="noteTab" class="profile-note-tabs">
+          <el-radio-button value="mine">{{ localText('myPosts') }}</el-radio-button>
+          <el-radio-button value="favorites">{{ localText('myFavorites') }}</el-radio-button>
+        </el-radio-group>
+        <div v-if="profileNotes.length" class="profile-note-list">
+          <button
+            v-for="item in profileNotes"
+            :key="item.id"
+            class="profile-note-item"
+            type="button"
+            @click="router.push(`/discover/${item.id}`)"
+          >
+            <div>
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.poiName }} · {{ formatTime(item.createdAt) }}</span>
+            </div>
+            <div class="profile-note-metrics">
+              <span><el-icon><Star /></el-icon>{{ item.likeCount }}</span>
+              <span><el-icon><CollectionTag /></el-icon>{{ item.favoriteCount }}</span>
+            </div>
+          </button>
+        </div>
+        <el-empty v-else :description="localText('noNotes')" :image-size="92" />
+      </section>
     </div>
 
     <el-dialog v-model="detailVisible" :title="$t('profile.feedbackDetail')" width="520px">
@@ -91,25 +122,36 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppShell from '../../components/AppShell.vue'
-import { aiApi, feedbackApi } from '../../api/modules'
+import { aiApi, discoverApi, feedbackApi } from '../../api/modules'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const feedback = ref([])
 const aiLogs = ref([])
+const myNotes = ref([])
+const favoriteNotes = ref([])
+const noteTab = ref('mine')
 const detailVisible = ref(false)
 const selectedFeedback = ref(null)
+const profileNotes = computed(() => (noteTab.value === 'favorites' ? favoriteNotes.value : myNotes.value))
 onMounted(loadProfileData)
 
 async function loadProfileData() {
-  const [feedbackItems, aiLogItems] = await Promise.all([feedbackApi.mine(), aiApi.mineLogs()])
+  const [feedbackItems, aiLogItems, mineItems, favoriteItems] = await Promise.all([
+    feedbackApi.mine(),
+    aiApi.mineLogs(),
+    discoverApi.mine(),
+    discoverApi.favorites()
+  ])
   feedback.value = feedbackItems
   aiLogs.value = aiLogItems
+  myNotes.value = mineItems
+  favoriteNotes.value = favoriteItems
 }
 
 function openFeedbackDetail(row) {
@@ -157,6 +199,24 @@ function formatTime(value) {
   if (!value) return t('common.unknown')
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return date.toLocaleString(locale.value === 'en-US' ? 'en-US' : 'zh-CN')
+}
+
+function localText(key) {
+  const zh = {
+    discoverNotes: '我的发现',
+    notesTip: '查看自己发布或收藏的 note',
+    myPosts: '我的发布',
+    myFavorites: '我的收藏',
+    noNotes: '暂无发现 note'
+  }
+  const en = {
+    discoverNotes: 'My Discover',
+    notesTip: 'Published and saved notes',
+    myPosts: 'My posts',
+    myFavorites: 'Saved',
+    noNotes: 'No discover notes yet'
+  }
+  return (locale.value === 'en-US' ? en : zh)[key] || key
 }
 </script>

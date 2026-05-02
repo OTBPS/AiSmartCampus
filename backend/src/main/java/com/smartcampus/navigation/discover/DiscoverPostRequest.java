@@ -1,16 +1,22 @@
 package com.smartcampus.navigation.discover;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public class DiscoverPostRequest {
     @NotBlank
+    @Size(max = 120)
     public String title;
     @NotBlank
-    public String summary;
+    @Size(max = 3000)
+    public String body;
+    @NotNull
     public Long poiId;
-    @NotBlank
-    public String category;
+    @Min(1)
+    @Max(5)
+    public Integer rating = 4;
     public String coverUrl = "";
-    public String status = "PUBLISHED";
 }
-

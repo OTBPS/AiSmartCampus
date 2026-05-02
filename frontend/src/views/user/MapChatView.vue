@@ -195,6 +195,7 @@ const aiContextNote = computed(() => {
 
 onMounted(async () => {
   await loadPois()
+  await applyPoiFromRoute()
   applyDraftFromRoute()
 })
 
@@ -217,9 +218,36 @@ watch(
   (value) => applyDraftFromRoute(value)
 )
 
+watch(
+  () => route.query.poiId,
+  (value) => applyPoiFromRoute(value)
+)
+
 async function loadPois() {
   pois.value = await poiApi.list({ enabledOnly: true, mapOnly: true, limit: 20 })
   selectedPoi.value = pois.value[0] || null
+}
+
+async function applyPoiFromRoute(value = route.query.poiId) {
+  const raw = Array.isArray(value) ? value[0] : value
+  const id = Number(raw)
+  if (!Number.isFinite(id) || id <= 0) return
+  try {
+    let poi = findPoiById(id)
+    if (!poi) {
+      poi = await poiApi.get(id)
+      if (poi?.id && !pois.value.some((item) => item.id === poi.id)) {
+        pois.value = [...pois.value, poi]
+      }
+    }
+    if (poi?.id) {
+      selectedPoi.value = poi
+      highlightedIds.value = [poi.id]
+      isolateSelectedPoi.value = true
+    }
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
 }
 
 function applyDraftFromRoute(value = route.query.draft) {

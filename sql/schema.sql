@@ -2,6 +2,9 @@ CREATE DATABASE IF NOT EXISTS smart_campus_navigation DEFAULT CHARACTER SET utf8
 USE smart_campus_navigation;
 
 DROP TABLE IF EXISTS ai_message;
+DROP TABLE IF EXISTS discover_favorite;
+DROP TABLE IF EXISTS discover_like;
+DROP TABLE IF EXISTS discover_comment;
 DROP TABLE IF EXISTS discover_post;
 DROP TABLE IF EXISTS feedback;
 DROP TABLE IF EXISTS poi;
@@ -50,13 +53,48 @@ CREATE TABLE feedback (
 
 CREATE TABLE discover_post (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
   title VARCHAR(120) NOT NULL,
   summary VARCHAR(500) NOT NULL,
-  poi_id BIGINT NULL,
+  body TEXT NOT NULL,
+  poi_id BIGINT NOT NULL,
   category VARCHAR(40) NOT NULL,
   cover_url VARCHAR(500) DEFAULT '',
   status VARCHAR(30) NOT NULL DEFAULT 'PUBLISHED',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  rating INT NOT NULL DEFAULT 4,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_discover_post_user (user_id),
+  INDEX idx_discover_post_poi (poi_id),
+  INDEX idx_discover_post_status_created (status, created_at)
+);
+
+CREATE TABLE discover_comment (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  post_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  content VARCHAR(600) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_discover_comment_post (post_id),
+  INDEX idx_discover_comment_user (user_id)
+);
+
+CREATE TABLE discover_like (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  post_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_discover_like_user_post (user_id, post_id),
+  INDEX idx_discover_like_post (post_id)
+);
+
+CREATE TABLE discover_favorite (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  post_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_discover_favorite_user_post (user_id, post_id),
+  INDEX idx_discover_favorite_post (post_id)
 );
 
 CREATE TABLE ai_message (
@@ -178,9 +216,19 @@ INSERT INTO poi (id, name, category, longitude, latitude, location_text, open_st
 INSERT INTO feedback (user_id, poi_id, type, content, status) VALUES
 (1, 15, 'INFO_ERROR', 'Campus Print Shop weekend service note needs administrator verification before publication.', 'PENDING');
 
-INSERT INTO discover_post (title, summary, poi_id, category, cover_url, status) VALUES
-('Quiet Study: NUIST Library Study Area', 'Quiet library-based study POI with outlets and sheltered access tags for recommendation demos.', 1, 'STUDY', '', 'PUBLISHED'),
-('Rain-Friendly Route: Xiyuan Dormitory to Mingde Building', 'Use the dormitory, canteen, and teaching-zone POIs to demonstrate route context on rainy days.', 2, 'ROUTE', '', 'PUBLISHED'),
-('Printing Guide: Campus Print Shop', 'Campus Print Shop is the service POI used for printing, copying, and binding queries.', 15, 'SERVICE', '', 'PUBLISHED'),
-('Evening Study: Xiyuan Study Lounge', 'A dorm-near study option for West Garden students, without asserting live seat availability.', 25, 'STUDY', '', 'PUBLISHED'),
-('NUIST Landmark: West Garden Observation Field', 'A meteorology-themed campus landmark that fits NUIST navigation demonstrations.', 20, 'LANDMARK', '', 'PUBLISHED');
+INSERT INTO discover_post (user_id, title, summary, body, poi_id, category, cover_url, status, rating) VALUES
+(1, 'Quiet Study: NUIST Library Study Area', 'Quiet library-based study POI with outlets and sheltered access tags for recommendation demos.', 'Quiet library-based study POI with outlets and sheltered access tags for recommendation demos. The library area is a reliable first stop when you need a calm place for long reading sessions.', 1, 'STUDY', '', 'PUBLISHED', 5),
+(1, 'Rain-Friendly Route: Xiyuan Dormitory to Mingde Building', 'Use the dormitory, canteen, and teaching-zone POIs to demonstrate route context on rainy days.', 'Use the dormitory, canteen, and teaching-zone POIs to demonstrate route context on rainy days. The sheltered points make the route easier to explain from a campus navigation perspective.', 2, 'TEACHING', '', 'PUBLISHED', 4),
+(1, 'Printing Guide: Campus Print Shop', 'Campus Print Shop is the service POI used for printing, copying, and binding queries.', 'Campus Print Shop is the service POI used for printing, copying, and binding queries. It is useful to save before exam weeks when students often need quick printing support.', 15, 'SERVICE', '', 'PUBLISHED', 4),
+(1, 'Evening Study: Xiyuan Study Lounge', 'A dorm-near study option for West Garden students, without asserting live seat availability.', 'A dorm-near study option for West Garden students, without asserting live seat availability. It works well as an evening study reference when returning to the dorm area late.', 25, 'STUDY', '', 'PUBLISHED', 4),
+(1, 'NUIST Landmark: West Garden Observation Field', 'A meteorology-themed campus landmark that fits NUIST navigation demonstrations.', 'A meteorology-themed campus landmark that fits NUIST navigation demonstrations. It gives the discover page a stronger campus identity beyond routine service POIs.', 20, 'LANDMARK', '', 'PUBLISHED', 5);
+
+INSERT INTO discover_comment (post_id, user_id, content) VALUES
+(1, 1, 'Library notes are especially helpful for new students looking for quiet study spots.');
+
+INSERT INTO discover_like (post_id, user_id) VALUES
+(1, 1),
+(5, 1);
+
+INSERT INTO discover_favorite (post_id, user_id) VALUES
+(1, 1);

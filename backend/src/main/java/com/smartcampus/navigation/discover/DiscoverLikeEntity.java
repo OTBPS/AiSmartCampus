@@ -5,19 +5,11 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
-@TableName("discover_post")
-public class DiscoverPostEntity {
+@TableName("discover_like")
+public class DiscoverLikeEntity {
     @TableId(type = IdType.AUTO)
     public Long id;
+    public Long postId;
     public Long userId;
-    public String title;
-    public String summary;
-    public String body;
-    public Long poiId;
-    public String category;
-    public String coverUrl;
-    public String status;
-    public Integer rating;
     public LocalDateTime createdAt;
-    public LocalDateTime updatedAt;
 }

@@ -85,8 +85,8 @@
         <el-form-item :label="$t('admin.changePoiCoordinate')">
           <div class="coordinate-review-row">
             <el-radio-group v-model="review.changeCoordinate" @change="handleCoordinateToggle">
-              <el-radio-button :label="false">{{ $t('common.no') }}</el-radio-button>
-              <el-radio-button :label="true">{{ $t('common.yes') }}</el-radio-button>
+              <el-radio-button :value="false">{{ $t('common.no') }}</el-radio-button>
+              <el-radio-button :value="true">{{ $t('common.yes') }}</el-radio-button>
             </el-radio-group>
             <el-button v-if="review.changeCoordinate" size="small" @click="coordinateVisible = true">
               {{ $t('admin.editCoordinates') }}

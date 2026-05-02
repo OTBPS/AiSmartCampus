@@ -5,86 +5,64 @@
         <h1>{{ $t('admin.discoverManageTitle') }}</h1>
         <p>{{ $t('admin.discoverManageSubtitle') }}</p>
       </div>
-      <el-button type="primary" @click="openCreate">{{ $t('admin.addCard') }}</el-button>
+      <el-button @click="load">{{ $t('common.refresh') }}</el-button>
     </div>
 
     <section class="table-panel">
       <el-table :data="posts" height="620">
-        <el-table-column prop="title" :label="$t('common.title')" />
-        <el-table-column prop="category" :label="$t('common.type')" width="120" />
-        <el-table-column prop="poiId" :label="$t('admin.relatedPoiId')" width="120" />
+        <el-table-column prop="title" :label="$t('common.title')" min-width="220" />
+        <el-table-column prop="authorName" :label="localText('author')" width="130" />
+        <el-table-column prop="poiName" :label="$t('admin.relatedPoi')" min-width="180" />
+        <el-table-column :label="localText('stats')" width="150">
+          <template #default="{ row }">
+            <span class="admin-note-stats">{{ row.likeCount }} / {{ row.favoriteCount }} / {{ row.commentCount }}</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('common.status')" width="120">
           <template #default="{ row }">
             {{ discoverStatusLabel(row.status) }}
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.action')" width="100">
+        <el-table-column :label="$t('common.action')" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">{{ $t('common.edit') }}</el-button>
+            <el-button link type="primary" @click="$router.push(`/discover/${row.id}`)">{{ localText('view') }}</el-button>
+            <el-button link type="danger" @click="confirmDelete(row)">{{ localText('delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </section>
-
-    <el-dialog v-model="visible" :title="form.id ? $t('admin.editCard') : $t('admin.createCard')" width="560px">
-      <el-form label-position="top">
-        <el-form-item :label="$t('common.title')"><el-input v-model="form.title" /></el-form-item>
-        <el-form-item :label="$t('common.summary')"><el-input v-model="form.summary" type="textarea" /></el-form-item>
-        <el-form-item :label="$t('common.type')"><el-input v-model="form.category" placeholder="STUDY / ROUTE / SERVICE" /></el-form-item>
-        <el-form-item :label="$t('admin.relatedPoiId')"><el-input-number v-model="form.poiId" :min="1" /></el-form-item>
-        <el-form-item :label="$t('common.status')">
-          <el-select v-model="form.status" style="width: 100%">
-            <el-option :label="$t('common.published')" value="PUBLISHED" />
-            <el-option :label="$t('common.hidden')" value="HIDDEN" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="visible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="save">{{ $t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
   </AppShell>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
 import { discoverApi } from '../../api/modules'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const posts = ref([])
-const visible = ref(false)
-const form = reactive(emptyForm())
 
 onMounted(load)
-
-function emptyForm() {
-  return { id: null, title: '', summary: '', category: 'STUDY', poiId: null, coverUrl: '', status: 'PUBLISHED' }
-}
 
 async function load() {
   posts.value = await discoverApi.adminPosts()
 }
 
-function openCreate() {
-  Object.assign(form, emptyForm())
-  visible.value = true
-}
-
-function openEdit(row) {
-  Object.assign(form, row)
-  visible.value = true
-}
-
-async function save() {
-  if (form.id) await discoverApi.update(form.id, form)
-  else await discoverApi.create(form)
-  ElMessage.success(t('admin.cardSaved'))
-  visible.value = false
-  load()
+async function confirmDelete(row) {
+  try {
+    await ElMessageBox.confirm(localText('deleteMessage'), localText('deleteTitle'), {
+      confirmButtonText: localText('delete'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning'
+    })
+    await discoverApi.adminDelete(row.id)
+    posts.value = posts.value.filter((item) => item.id !== row.id)
+    ElMessage.success(localText('deleted'))
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message)
+  }
 }
 
 function discoverStatusLabel(status) {
@@ -92,5 +70,27 @@ function discoverStatusLabel(status) {
     PUBLISHED: t('common.published'),
     HIDDEN: t('common.hidden')
   }[status] || status
+}
+
+function localText(key) {
+  const zh = {
+    author: '作者',
+    stats: '喜欢/收藏/评论',
+    view: '查看',
+    delete: '删除',
+    deleteTitle: '删除 note',
+    deleteMessage: '管理员只能删除 note，确定删除这条内容吗？',
+    deleted: 'note 已删除'
+  }
+  const en = {
+    author: 'Author',
+    stats: 'Likes/Saves/Comments',
+    view: 'View',
+    delete: 'Delete',
+    deleteTitle: 'Delete note',
+    deleteMessage: 'Admins can only delete notes. Delete this note?',
+    deleted: 'Note deleted'
+  }
+  return (locale.value === 'en-US' ? en : zh)[key] || key
 }
 </script>

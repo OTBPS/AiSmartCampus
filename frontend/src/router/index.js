@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/auth'
 import LoginView from '../views/LoginView.vue'
 import MapChatView from '../views/user/MapChatView.vue'
 import DiscoverView from '../views/user/DiscoverView.vue'
+import DiscoverDetailView from '../views/user/DiscoverDetailView.vue'
 import ProfileView from '../views/user/ProfileView.vue'
 import AdminDashboardView from '../views/admin/AdminDashboardView.vue'
 import AdminPoisView from '../views/admin/AdminPoisView.vue'
@@ -15,6 +16,7 @@ const routes = [
   { path: '/login', component: LoginView, meta: { public: true } },
   { path: '/map-chat', component: MapChatView },
   { path: '/discover', component: DiscoverView },
+  { path: '/discover/:id', component: DiscoverDetailView },
   { path: '/profile', component: ProfileView },
   { path: '/admin', redirect: '/admin/dashboard', meta: { admin: true } },
   { path: '/admin/dashboard', component: AdminDashboardView, meta: { admin: true } },
@@ -41,4 +43,3 @@ router.beforeEach((to) => {
 })
 
 export default router
-

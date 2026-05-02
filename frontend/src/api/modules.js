@@ -8,6 +8,7 @@ export const authApi = {
 
 export const poiApi = {
   list: (params) => http.get('/pois', { params }),
+  get: (id) => http.get(`/pois/${id}`),
   create: (payload) => http.post('/pois/admin', payload),
   update: (id, payload) => http.put(`/pois/admin/${id}`, payload),
   updateStatus: (id, payload) => http.put(`/pois/admin/${id}/status`, payload)
@@ -28,10 +29,21 @@ export const feedbackApi = {
 }
 
 export const discoverApi = {
-  posts: () => http.get('/discover/posts'),
+  posts: (params) => http.get('/discover/posts', { params }),
+  post: (id) => http.get(`/discover/posts/${id}`),
+  create: (payload) => http.post('/discover/posts', payload),
+  update: (id, payload) => http.put(`/discover/posts/${id}`, payload),
+  remove: (id) => http.delete(`/discover/posts/${id}`),
+  like: (id) => http.post(`/discover/posts/${id}/like`),
+  unlike: (id) => http.delete(`/discover/posts/${id}/like`),
+  favorite: (id) => http.post(`/discover/posts/${id}/favorite`),
+  unfavorite: (id) => http.delete(`/discover/posts/${id}/favorite`),
+  addComment: (id, payload) => http.post(`/discover/posts/${id}/comments`, payload),
+  deleteComment: (id) => http.delete(`/discover/comments/${id}`),
+  mine: () => http.get('/discover/mine'),
+  favorites: () => http.get('/discover/favorites'),
   adminPosts: () => http.get('/discover/admin/posts'),
-  create: (payload) => http.post('/discover/admin/posts', payload),
-  update: (id, payload) => http.put(`/discover/admin/posts/${id}`, payload)
+  adminDelete: (id) => http.delete(`/discover/admin/posts/${id}`)
 }
 
 export const adminApi = {
