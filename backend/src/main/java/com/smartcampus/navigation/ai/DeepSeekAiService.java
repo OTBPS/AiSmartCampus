@@ -24,7 +24,7 @@ import org.springframework.web.client.RestClient;
 
 @Service
 public class DeepSeekAiService {
-    private static final Set<String> INTENTS = Set.of("find_poi", "recommend_place", "route_help", "unknown");
+    private static final Set<String> INTENTS = Set.of("find_poi", "recommend_place", "route_help", "find_note", "small_talk", "unknown");
     private static final Set<String> MAP_ACTIONS = Set.of("highlight_pois", "open_poi_detail", "draw_route");
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -107,7 +107,7 @@ public class DeepSeekAiService {
         builder.append("Return only valid JSON, no markdown. ");
         builder.append("Use only POI IDs from the campus POI list. ");
         builder.append("The JSON schema is: ");
-        builder.append("{\"intent\":\"find_poi|recommend_place|route_help|unknown\",");
+        builder.append("{\"intent\":\"find_poi|recommend_place|route_help|find_note|small_talk|unknown\",");
         builder.append("\"reply\":\"short user-facing message\",");
         builder.append("\"poiIds\":[1,2],");
         builder.append("\"toolCalls\":[{\"tool\":\"searchPoi|searchPoiByTags|planCampusRouteFallback\",\"arguments\":{}}],");
@@ -115,6 +115,8 @@ public class DeepSeekAiService {
         builder.append("{\"type\":\"open_poi_detail\",\"poiId\":1},");
         builder.append("{\"type\":\"draw_route\",\"poiIds\":[1,2],\"routeMode\":\"AMAP_FALLBACK\",");
         builder.append("\"payload\":{\"from\":\"origin name\",\"to\":\"destination name\",\"reason\":\"standard route fallback\"}}]}.");
+        builder.append(" For greetings, thanks, capability questions, or other small talk, use intent small_talk, reply briefly, and return empty poiIds, toolCalls, and mapActions. ");
+        builder.append(" For requests about campus notes, comments, reviews, or discover posts for a place, use intent find_note, reply briefly, and return empty poiIds, toolCalls, and mapActions. ");
         builder.append(" For route questions, return draw_route.poiIds in route order: origin, waypoints, destination. ");
         builder.append("If map route context is supplied, use text-mentioned origin/destination first, fill missing route endpoints from context, keep context waypoint order, append extra text waypoints, and de-duplicate. ");
         builder.append("For draw_route payload, include from, to, via as an array of waypoint names, reason, and source as text|map_context|mixed. ");
@@ -170,7 +172,10 @@ public class DeepSeekAiService {
             response.pois = selectedIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
             response.reply = normalizeReplyLanguage(response.reply, response.intent, locale, response.pois);
             if (response.toolCalls.isEmpty()) {
-                response.toolCalls.add(deriveToolCall(response.intent, selectedIds));
+                AiChatResponse.ToolCall fallbackToolCall = deriveToolCall(response.intent, selectedIds);
+                if (fallbackToolCall != null) {
+                    response.toolCalls.add(fallbackToolCall);
+                }
             }
             if (!StringUtils.hasText(response.reply)) {
                 response.reply = defaultReply(locale);
@@ -255,6 +260,9 @@ public class DeepSeekAiService {
         }
         if ("route_help".equals(intent)) {
             return new AiChatResponse.ToolCall("planCampusRouteFallback", Map.of("poiIds", ids));
+        }
+        if ("small_talk".equals(intent) || "find_note".equals(intent)) {
+            return null;
         }
         return new AiChatResponse.ToolCall("searchPoi", Map.of("poiIds", ids));
     }

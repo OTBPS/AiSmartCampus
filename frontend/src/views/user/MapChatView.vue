@@ -3,6 +3,10 @@
     <div class="workbench map-chat-workbench">
       <section class="panel ai-panel">
         <div class="panel-pad">
+          <div class="map-chat-input-head">
+            <span>{{ localText('chatPanel') }}</span>
+            <el-button size="small" plain @click="clearPageChat">{{ localText('clearChat') }}</el-button>
+          </div>
           <el-input
             ref="questionInputRef"
             v-model="question"
@@ -31,27 +35,55 @@
             <div class="bubble">{{ message.content }}</div>
           </article>
 
-          <div v-if="lastResponse" class="result-list">
-            <el-alert :title="$t('map.intent', { intent: intentLabel(lastResponse.intent) })" type="success" :closable="false" />
-            <div class="ai-action-board">
-              <div>
-                <strong>{{ $t('map.mapActions') }}</strong>
-                <div class="action-tags">
-                  <el-tag v-for="action in mapActions" :key="action.key" size="small" effect="plain">
-                    {{ action.label }}
-                  </el-tag>
-                </div>
-              </div>
-              <div>
-                <strong>{{ $t('map.toolCalls') }}</strong>
-                <div class="action-tags">
-                  <el-tag v-for="tool in toolCalls" :key="tool.key" size="small" type="info" effect="plain">
-                    {{ tool.label }}
-                  </el-tag>
-                </div>
-              </div>
+          <div v-if="lastResponse && !isSmallTalkResponse" class="result-list">
+            <div v-if="routeSummary || showShelterCandidates" class="ai-action-board">
               <p v-if="routeSummary" class="route-summary">{{ routeSummary }}</p>
+              <div v-if="showShelterCandidates" class="shelter-choice-panel">
+                <div class="shelter-choice-head">
+                  <strong>{{ localText('shelterCandidates') }}</strong>
+                  <span>{{ selectedShelterCandidateIds.length }}/2</span>
+                </div>
+                <p>{{ localText('shelterCandidateHint') }}</p>
+                <div class="shelter-choice-list">
+                  <button
+                    v-for="candidate in shelterCandidates"
+                    :key="candidate.poiId"
+                    class="shelter-choice-item"
+                    :class="{ selected: selectedShelterCandidateIds.includes(candidate.poiId) }"
+                    type="button"
+                    :aria-pressed="selectedShelterCandidateIds.includes(candidate.poiId)"
+                    @click="toggleShelterCandidate(candidate.poiId)"
+                  >
+                    <span>{{ candidate.name }}</span>
+                    <small>
+                      {{ localText('fromRoute') }} {{ Math.round(candidate.distanceFromRouteMeters || 0) }}m ·
+                      {{ localText('fromStart') }} {{ Math.round(candidate.distanceFromStartMeters || 0) }}m
+                    </small>
+                  </button>
+                </div>
+                <div class="shelter-choice-actions">
+                  <el-button size="small" @click="dismissShelterCandidates">{{ localText('skipShelters') }}</el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :disabled="!selectedShelterCandidateIds.length"
+                    @click="applyShelterCandidates"
+                  >
+                    {{ localText('addShelters') }}
+                  </el-button>
+                </div>
+              </div>
             </div>
+            <button
+              v-for="note in noteResults"
+              :key="note.id"
+              class="ai-note-card"
+              type="button"
+              @click="openNoteFromChat(note)"
+            >
+              <span>{{ note.title }}</span>
+              <small v-if="note.poiName">{{ note.poiName }}</small>
+            </button>
             <button
               v-for="poi in resultPois"
               :key="poi.id"
@@ -123,13 +155,15 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppShell from '../../components/AppShell.vue'
 import CampusMap from '../../components/CampusMap.vue'
 import { aiApi, feedbackApi, poiApi } from '../../api/modules'
 
 const { t, locale } = useI18n()
 const route = useRoute()
+const router = useRouter()
+const MAP_CHAT_STATE_KEY = 'smartcampus.mapChat.session.v1'
 const question = ref(t('map.quickStudy'))
 const questionInputRef = ref(null)
 const loading = ref(false)
@@ -138,15 +172,18 @@ const selectedPoi = ref(null)
 const isolateSelectedPoi = ref(false)
 const lastResponse = ref(null)
 const highlightedIds = ref([])
+const selectedShelterCandidateIds = ref([])
+const shelterCandidatesDismissed = ref(false)
 const routeDraft = reactive({ origin: null, destination: null, waypoints: [] })
 const messagesRef = ref(null)
 const feedbackVisible = ref(false)
 const feedback = reactive({ type: 'INFO_ERROR', content: '' })
-const messages = ref([
-  { id: 1, role: 'assistant', content: t('map.intro') }
-])
+const messages = ref(defaultMessages())
 
 const resultPois = computed(() => lastResponse.value?.pois || [])
+const noteResults = computed(() => lastResponse.value?.notes || [])
+const isSmallTalkResponse = computed(() => lastResponse.value?.intent === 'small_talk')
+const isNoteResponse = computed(() => lastResponse.value?.intent === 'find_note')
 const routeDraftReady = computed(() => Boolean(routeDraft.origin?.id && routeDraft.destination?.id))
 const hasRouteDraft = computed(() => Boolean(routeDraft.origin?.id || routeDraft.destination?.id || routeDraft.waypoints.length))
 const displayedPois = computed(() => {
@@ -155,7 +192,8 @@ const displayedPois = computed(() => {
   }
   if (routeAction.value?.poiIds?.length) {
     const routePois = routeAction.value.poiIds.map((id) => findPoiById(id)).filter(Boolean)
-    if (routePois.length) return routePois
+    const candidates = shelterCandidatePois()
+    if (routePois.length) return uniquePois([...routePois, ...candidates])
   }
   const merged = new Map()
   pois.value.forEach((poi) => merged.set(poi.id, poi))
@@ -168,14 +206,29 @@ const displayedPois = computed(() => {
 })
 const routeAction = computed(() => lastResponse.value?.mapActions?.find((item) => item.type === 'draw_route') || null)
 const effectiveRouteAction = computed(() => (isolateSelectedPoi.value ? null : routeAction.value))
-const mapActions = computed(() => (lastResponse.value?.mapActions || []).map((action, index) => ({
-  key: `${action.type}-${index}`,
-  label: mapActionLabel(action)
-})))
-const toolCalls = computed(() => (lastResponse.value?.toolCalls || []).map((tool, index) => ({
-  key: `${tool.tool}-${index}`,
-  label: toolCallLabel(tool)
-})))
+const shelterCandidates = computed(() => {
+  const payload = routeAction.value?.payload || {}
+  const candidates = Array.isArray(payload.shelterCandidates) ? payload.shelterCandidates : []
+  return candidates
+    .map((candidate) => {
+      const poi = findPoiById(candidate.poiId)
+      return {
+        ...candidate,
+        name: candidate.name || poi?.name || `POI ${candidate.poiId}`,
+        poi
+      }
+    })
+    .filter((candidate) => candidate.poiId && candidate.poi && !routeAction.value?.poiIds?.includes(candidate.poiId))
+})
+const showShelterCandidates = computed(() => {
+  const payload = routeAction.value?.payload || {}
+  return Boolean(
+    payload.weatherShelterSuggested
+    && !payload.weatherAdjusted
+    && shelterCandidates.value.length
+    && !shelterCandidatesDismissed.value
+  )
+})
 const routeSummary = computed(() => {
   if (!routeAction.value) return ''
   const payload = routeAction.value.payload || {}
@@ -184,10 +237,22 @@ const routeSummary = computed(() => {
   const reason = payload.reason || t('map.fallbackReason')
   const summary = t('map.routeSummary', { from, to, reason })
   const via = Array.isArray(payload.via) && payload.via.length ? `${localText('via')}: ${payload.via.join(' -> ')}` : ''
+  if (payload.weatherAdjusted) {
+    const baseSummary = via ? `${summary} \u8def ${via}` : summary
+    const weatherReason = payload.weatherReason ? `${payload.weatherReason} ` : ''
+    return `${baseSummary} \u8def ${weatherReason}${localText('weatherShelterAdded')}`
+  }
+  if (payload.weatherShelterSuggested) {
+    const baseSummary = via ? `${summary} \u8def ${via}` : summary
+    const weatherReason = payload.weatherReason ? `${payload.weatherReason} ` : ''
+    return `${baseSummary} \u8def ${weatherReason}${localText('weatherShelterSuggested')}`
+  }
   return via ? `${summary} · ${via}` : summary
 })
 const aiContextNote = computed(() => {
   if (!lastResponse.value) return ''
+  if (isSmallTalkResponse.value) return ''
+  if (isNoteResponse.value) return ''
   if (routeSummary.value) return routeSummary.value
   if (lastResponse.value.intent === 'recommend_place') return t('map.recommendationReason', { reply: lastResponse.value.reply })
   return t('map.aiAction', { reply: lastResponse.value.reply })
@@ -195,19 +260,34 @@ const aiContextNote = computed(() => {
 
 onMounted(async () => {
   await loadPois()
+  restoreChatState()
   await applyPoiFromRoute()
   applyDraftFromRoute()
 })
 
 watch(
-  () => [messages.value.length, lastResponse.value?.intent, resultPois.value.length, mapActions.value.length],
+  () => [messages.value.length, lastResponse.value?.intent, resultPois.value.length, noteResults.value.length, routeSummary.value],
   scrollMessagesToBottom,
   { flush: 'post' }
 )
 
+watch(
+  () => ({
+    messages: messages.value,
+    lastResponse: lastResponse.value,
+    highlightedIds: highlightedIds.value,
+    selectedPoiId: selectedPoi.value?.id || null,
+    isolateSelectedPoi: isolateSelectedPoi.value,
+    shelterCandidatesDismissed: shelterCandidatesDismissed.value,
+    question: question.value
+  }),
+  persistChatState,
+  { deep: true }
+)
+
 watch(locale, () => {
   if (!lastResponse.value && messages.value.length === 1 && !route.query.draft) {
-    messages.value = [{ id: 1, role: 'assistant', content: t('map.intro') }]
+    messages.value = defaultMessages()
     question.value = t('map.quickStudy')
     scrollMessagesToBottom()
   }
@@ -226,6 +306,63 @@ watch(
 async function loadPois() {
   pois.value = await poiApi.list({ enabledOnly: true, mapOnly: true, limit: 20 })
   selectedPoi.value = pois.value[0] || null
+}
+
+function defaultMessages() {
+  return [{ id: 1, role: 'assistant', content: t('map.intro') }]
+}
+
+function restoreChatState() {
+  try {
+    const raw = sessionStorage.getItem(MAP_CHAT_STATE_KEY)
+    if (!raw) return
+    const state = JSON.parse(raw)
+    if (Array.isArray(state.messages) && state.messages.length) {
+      messages.value = state.messages
+    }
+    lastResponse.value = state.lastResponse || null
+    highlightedIds.value = Array.isArray(state.highlightedIds) ? state.highlightedIds : []
+    isolateSelectedPoi.value = Boolean(state.isolateSelectedPoi)
+    shelterCandidatesDismissed.value = Boolean(state.shelterCandidatesDismissed)
+    if (typeof state.question === 'string') {
+      question.value = state.question
+    }
+    const restoredPoi = findPoiById(state.selectedPoiId)
+    if (restoredPoi) {
+      selectedPoi.value = restoredPoi
+    }
+    scrollMessagesToBottom()
+  } catch {
+    sessionStorage.removeItem(MAP_CHAT_STATE_KEY)
+  }
+}
+
+function persistChatState() {
+  try {
+    sessionStorage.setItem(MAP_CHAT_STATE_KEY, JSON.stringify({
+      messages: messages.value,
+      lastResponse: lastResponse.value,
+      highlightedIds: highlightedIds.value,
+      selectedPoiId: selectedPoi.value?.id || null,
+      isolateSelectedPoi: isolateSelectedPoi.value,
+      shelterCandidatesDismissed: shelterCandidatesDismissed.value,
+      question: question.value
+    }))
+  } catch {
+    // Ignore storage failures; the chat still works for the current render.
+  }
+}
+
+function clearPageChat() {
+  messages.value = defaultMessages()
+  lastResponse.value = null
+  highlightedIds.value = []
+  selectedShelterCandidateIds.value = []
+  shelterCandidatesDismissed.value = false
+  isolateSelectedPoi.value = false
+  question.value = t('map.quickStudy')
+  sessionStorage.removeItem(MAP_CHAT_STATE_KEY)
+  scrollMessagesToBottom()
 }
 
 async function applyPoiFromRoute(value = route.query.poiId) {
@@ -268,6 +405,8 @@ async function ask(text, routeContextOverride) {
     const routeContext = routeContextOverride === undefined ? routeContextForMessage(text) : routeContextOverride
     const response = await aiApi.chat(text, locale.value, routeContext)
     lastResponse.value = response
+    selectedShelterCandidateIds.value = []
+    shelterCandidatesDismissed.value = false
     messages.value.push({ id: Date.now() + 1, role: 'assistant', content: response.reply })
     applyMapActions(response)
     scrollMessagesToBottom()
@@ -279,7 +418,17 @@ async function ask(text, routeContextOverride) {
 }
 
 function applyMapActions(response) {
+  if (response.intent === 'small_talk') {
+    highlightedIds.value = []
+    return
+  }
+  if (response.intent === 'find_note') {
+    highlightedIds.value = []
+    return
+  }
   isolateSelectedPoi.value = false
+  selectedShelterCandidateIds.value = []
+  shelterCandidatesDismissed.value = false
   const highlight = response.mapActions?.find((item) => item.type === 'highlight_pois')
   highlightedIds.value = highlight?.poiIds || []
   const open = response.mapActions?.find((item) => item.type === 'open_poi_detail')
@@ -292,6 +441,85 @@ function applyMapActions(response) {
   } else if (response.pois?.length) {
     selectedPoi.value = response.pois[0]
   }
+}
+
+function shelterCandidatePois() {
+  const payload = routeAction.value?.payload || {}
+  if (payload.weatherAdjusted) return []
+  const ids = payload.shelterCandidateIds || []
+  const routeIds = routeAction.value?.poiIds || []
+  return ids
+    .filter((id) => !routeIds.includes(id))
+    .map((id) => findPoiById(id))
+    .filter(Boolean)
+}
+
+function uniquePois(items) {
+  const map = new Map()
+  items.filter(Boolean).forEach((poi) => map.set(poi.id, poi))
+  return Array.from(map.values())
+}
+
+function toggleShelterCandidate(id) {
+  if (selectedShelterCandidateIds.value.includes(id)) {
+    selectedShelterCandidateIds.value = selectedShelterCandidateIds.value.filter((item) => item !== id)
+    return
+  }
+  if (selectedShelterCandidateIds.value.length >= 2) {
+    ElMessage.warning(localText('shelterLimit'))
+    return
+  }
+  selectedShelterCandidateIds.value = [...selectedShelterCandidateIds.value, id]
+}
+
+function applyShelterCandidates() {
+  if (!routeAction.value || !selectedShelterCandidateIds.value.length) return
+  const payload = routeAction.value.payload || {}
+  const originalIds = Array.isArray(payload.originalPoiIds) && payload.originalPoiIds.length
+    ? payload.originalPoiIds
+    : routeAction.value.poiIds || []
+  const selected = shelterCandidates.value
+    .filter((candidate) => selectedShelterCandidateIds.value.includes(candidate.poiId))
+    .sort((a, b) => (a.segmentIndex - b.segmentIndex) || (a.distanceFromStartMeters - b.distanceFromStartMeters))
+  const byInsertAfter = new Map()
+  selected.forEach((candidate) => {
+    const key = candidate.insertAfterPoiId
+    if (!byInsertAfter.has(key)) byInsertAfter.set(key, [])
+    byInsertAfter.get(key).push(candidate)
+  })
+  const nextIds = []
+  originalIds.forEach((id) => {
+    if (!nextIds.includes(id)) nextIds.push(id)
+    const inserts = byInsertAfter.get(id) || []
+    inserts.forEach((candidate) => {
+      if (!nextIds.includes(candidate.poiId)) nextIds.push(candidate.poiId)
+    })
+  })
+  routeAction.value.poiIds = nextIds
+  payload.weatherAdjusted = true
+  payload.weatherShelterSuggested = false
+  payload.shelterWaypointIds = selected.map((candidate) => candidate.poiId)
+  payload.via = nextIds
+    .slice(1, -1)
+    .map((id) => findPoiById(id)?.name)
+    .filter(Boolean)
+  routeAction.value.payload = payload
+  const highlight = lastResponse.value?.mapActions?.find((item) => item.type === 'highlight_pois')
+  if (highlight) highlight.poiIds = nextIds
+  highlightedIds.value = nextIds
+  selectedShelterCandidateIds.value = []
+  shelterCandidatesDismissed.value = true
+  ElMessage.success(localText('shelterAddedToast'))
+}
+
+function dismissShelterCandidates() {
+  selectedShelterCandidateIds.value = []
+  shelterCandidatesDismissed.value = true
+}
+
+function openNoteFromChat(note) {
+  if (!note?.id) return
+  router.push({ path: `/discover/${note.id}`, query: { from: 'map-chat' } })
 }
 
 function selectPoi(poi, isolate = true) {
@@ -399,24 +627,6 @@ async function submitFeedback() {
   feedbackVisible.value = false
 }
 
-function mapActionLabel(action) {
-  if (action.type === 'highlight_pois') return t('map.highlightPois', { count: action.poiIds?.length || 0 })
-  if (action.type === 'open_poi_detail') return t('map.openDetail', { id: action.poiId })
-  if (action.type === 'draw_route') return t('map.drawRoute', { mode: action.routeMode || 'fallback' })
-  return action.type
-}
-
-function toolCallLabel(tool) {
-  if (tool.tool === 'searchPoi') return t('map.searchPoi', { keyword: tool.arguments?.keyword || '' })
-  if (tool.tool === 'searchPoiByTags') return t('map.searchPoiByTags')
-  if (tool.tool === 'planCampusRouteFallback') return t('map.planRouteFallback')
-  return tool.tool
-}
-
-function intentLabel(intent) {
-  return t(`labels.intent.${intent}`, intent)
-}
-
 function routePoiName(index) {
   const id = routeAction.value?.poiIds?.[index]
   return findPoiById(id)?.name
@@ -438,7 +648,19 @@ function localText(key) {
     writeToChat: '\u5199\u5165\u5bf9\u8bdd\u6846',
     generateRoute: '\u751f\u6210\u8def\u7ebf',
     clear: '\u6e05\u7a7a',
-    routeDraftIncomplete: '\u8bf7\u5148\u8bbe\u7f6e\u8d77\u70b9\u548c\u7ec8\u70b9'
+    routeDraftIncomplete: '\u8bf7\u5148\u8bbe\u7f6e\u8d77\u70b9\u548c\u7ec8\u70b9',
+    weatherShelterSuggested: '\u68c0\u6d4b\u5230\u6076\u52a3\u5929\u6c14\uff0c\u5df2\u63a8\u8350\u9644\u8fd1\u53ef\u906e\u853d\u70b9\uff0c\u53ef\u9009\u62e9\u6700\u591a 2 \u4e2a\u52a0\u5165\u8def\u7ebf',
+    weatherShelterAdded: '\u5df2\u52a0\u5165\u53ef\u906e\u853d\u9014\u7ecf\u70b9',
+    shelterCandidates: '\u5019\u9009\u906e\u853d\u70b9',
+    shelterCandidateHint: '\u5148\u67e5\u770b\u5019\u9009\u70b9\uff0c\u518d\u9009\u62e9\u6700\u591a 2 \u4e2a\u63d2\u5165\u5f53\u524d\u8def\u7ebf\u3002',
+    addShelters: '\u52a0\u5165\u8def\u7ebf',
+    skipShelters: '\u6682\u4e0d\u52a0\u5165',
+    shelterLimit: '\u6700\u591a\u9009\u62e9 2 \u4e2a\u906e\u853d\u70b9',
+    shelterAddedToast: '\u5df2\u5c06\u906e\u853d\u70b9\u52a0\u5165\u8def\u7ebf',
+    fromRoute: '\u8ddd\u8def\u7ebf',
+    fromStart: '\u8ddd\u8d77\u70b9',
+    chatPanel: 'AI \u804a\u5929',
+    clearChat: '\u6e05\u9664\u804a\u5929'
   }
   const en = {
     routeDraft: 'Route Draft',
@@ -449,7 +671,19 @@ function localText(key) {
     writeToChat: 'Write to Chat',
     generateRoute: 'Generate Route',
     clear: 'Clear',
-    routeDraftIncomplete: 'Set both start and end first'
+    routeDraftIncomplete: 'Set both start and end first',
+    weatherShelterSuggested: 'Severe weather detected. Nearby sheltered candidates are ready, and you can add up to 2 to the route',
+    weatherShelterAdded: 'Sheltered waypoints were added',
+    shelterCandidates: 'Shelter Candidates',
+    shelterCandidateHint: 'Review the candidates, then choose up to 2 to insert into the current route.',
+    addShelters: 'Add to Route',
+    skipShelters: 'Skip',
+    shelterLimit: 'Choose at most 2 sheltered points',
+    shelterAddedToast: 'Sheltered points were added to the route',
+    fromRoute: 'from route',
+    fromStart: 'from start',
+    chatPanel: 'AI Chat',
+    clearChat: 'Clear Chat'
   }
   return (locale.value === 'en-US' ? en : zh)[key] || key
 }

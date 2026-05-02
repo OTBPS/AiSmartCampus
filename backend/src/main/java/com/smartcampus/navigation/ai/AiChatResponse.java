@@ -1,6 +1,7 @@
 package com.smartcampus.navigation.ai;
 
 import com.smartcampus.navigation.poi.PoiEntity;
+import com.smartcampus.navigation.discover.DiscoverPostResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ public class AiChatResponse {
     public List<ToolCall> toolCalls = new ArrayList<>();
     public List<MapAction> mapActions = new ArrayList<>();
     public List<PoiEntity> pois = new ArrayList<>();
+    public List<DiscoverPostResponse> notes = new ArrayList<>();
 
     public static class ToolCall {
         public String tool;
@@ -40,4 +42,3 @@ public class AiChatResponse {
         }
     }
 }
-

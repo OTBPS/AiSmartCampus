@@ -3,7 +3,6 @@
     <div class="page-head discover-head">
       <div>
         <h1>{{ $t('discover.title') }}</h1>
-        <p>{{ $t('discover.subtitle') }}</p>
       </div>
       <div class="discover-head-actions">
         <el-radio-group v-model="sortMode" @change="load">
@@ -45,7 +44,9 @@
               :aria-label="localText('like')"
               @click="toggleLike(post)"
             >
-              <el-icon><StarFilled v-if="post.liked" /><Star v-else /></el-icon>
+              <svg class="note-heart-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21s-6.9-4.4-9.3-8.4C.8 9.3 2.4 5.3 6 4.5c2-.4 3.8.5 5 2 1.2-1.5 3-2.4 5-2 3.6.8 5.2 4.8 3.3 8.1C18.9 16.6 12 21 12 21Z" />
+              </svg>
               <span>{{ post.likeCount }}</span>
             </button>
             <button

@@ -1,11 +1,16 @@
 package com.smartcampus.navigation.ai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartcampus.navigation.discover.DiscoverPostResponse;
+import com.smartcampus.navigation.discover.DiscoverService;
 import com.smartcampus.navigation.poi.PoiEntity;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -60,12 +65,43 @@ class AiChatServiceTest {
         assertSame(fallback, response);
     }
 
+    @Test
+    void findNoteIntentIsEnrichedWithDiscoverResults() {
+        MockAiService mockAiService = mock(MockAiService.class);
+        DeepSeekAiService deepSeekAiService = mock(DeepSeekAiService.class);
+        DiscoverService discoverService = mock(DiscoverService.class);
+        AiChatResponse ruleResponse = new AiChatResponse();
+        ruleResponse.intent = "find_note";
+        ruleResponse.reply = "Searching notes";
+        DiscoverPostResponse note = new DiscoverPostResponse();
+        note.id = 3L;
+        note.title = "Library note";
+        when(mockAiService.preview(eq("show notes about library"), eq("en-US"))).thenReturn(ruleResponse);
+        when(discoverService.searchPublishedNotes(eq("library"), eq(null), eq(5))).thenReturn(List.of(note));
+
+        AiChatResponse response = service(mockAiService, deepSeekAiService, discoverService).preview("show notes about library", "en-US");
+
+        assertEquals("find_note", response.intent);
+        assertEquals(List.of(note), response.notes);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+        assertEquals("I found 1 related discover notes.", response.reply);
+    }
+
     private AiChatService service(MockAiService mockAiService, DeepSeekAiService deepSeekAiService) {
+        return service(mockAiService, deepSeekAiService, mock(DiscoverService.class));
+    }
+
+    private AiChatService service(MockAiService mockAiService, DeepSeekAiService deepSeekAiService, DiscoverService discoverService) {
+        RouteWeatherEnhancer routeWeatherEnhancer = mock(RouteWeatherEnhancer.class);
+        when(routeWeatherEnhancer.enhance(any(AiChatResponse.class), any())).thenAnswer(invocation -> invocation.getArgument(0));
         return new AiChatService(
                 mockAiService,
                 deepSeekAiService,
                 mock(AiMessageMapper.class),
                 new ObjectMapper(),
+                routeWeatherEnhancer,
+                discoverService,
                 "deepseek"
         );
     }

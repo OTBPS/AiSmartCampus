@@ -39,6 +39,64 @@ class DiscoverServiceTest {
     }
 
     @Test
+    void searchPublishedNotesMatchesPoiAliasesSortsByLikesAndLimits() {
+        TestContext ctx = new TestContext();
+        List<DiscoverPostEntity> posts = List.of(
+                post(1L, 7L),
+                post(2L, 7L),
+                post(3L, 7L),
+                post(4L, 7L),
+                post(5L, 7L),
+                post(6L, 7L)
+        );
+        posts.forEach(post -> {
+            post.title = "Library note " + post.id;
+            post.body = "Focused study near the library";
+            post.summary = post.body;
+        });
+        when(ctx.postMapper.selectList(any())).thenReturn(posts);
+        ctx.stubCounts();
+        when(ctx.likeMapper.selectCount(any())).thenReturn(1L, 5L, 3L, 7L, 2L, 6L);
+
+        List<DiscoverPostResponse> results = ctx.service().searchPublishedNotes("\u56fe\u4e66\u9986", 7L, 5);
+
+        assertEquals(List.of(4L, 6L, 2L, 3L, 5L), results.stream().map(post -> post.id).toList());
+    }
+
+    @Test
+    void searchPublishedNotesUsesPopularNotesWhenKeywordIsBlank() {
+        TestContext ctx = new TestContext();
+        DiscoverPostEntity first = post(1L, 7L);
+        first.title = "Library note";
+        DiscoverPostEntity second = post(2L, 7L);
+        second.title = "Canteen note";
+        when(ctx.postMapper.selectList(any())).thenReturn(List.of(first, second));
+        ctx.stubCounts();
+        when(ctx.likeMapper.selectCount(any())).thenReturn(1L, 4L);
+
+        List<DiscoverPostResponse> results = ctx.service().searchPublishedNotes(" ", 7L, 5);
+
+        assertEquals(List.of(2L, 1L), results.stream().map(post -> post.id).toList());
+    }
+
+    @Test
+    void searchPublishedNotesReturnsEmptyWhenNothingMatches() {
+        TestContext ctx = new TestContext();
+        DiscoverPostEntity post = post(1L, 7L);
+        post.title = "Gym note";
+        post.summary = "Sports training";
+        post.body = "Sports training";
+        post.poiId = 10L;
+        when(ctx.poiMapper.selectById(10L)).thenReturn(poi(10L, "NUIST Gymnasium", "SPORTS", "sports,gym"));
+        when(ctx.postMapper.selectList(any())).thenReturn(List.of(post));
+        ctx.stubCounts();
+
+        List<DiscoverPostResponse> results = ctx.service().searchPublishedNotes("library", 7L, 5);
+
+        assertEquals(List.of(), results);
+    }
+
+    @Test
     void createStoresOwnerAndDerivesCategoryFromPoi() {
         TestContext ctx = new TestContext();
         AtomicReference<DiscoverPostEntity> saved = new AtomicReference<>();
@@ -155,13 +213,7 @@ class DiscoverServiceTest {
         final UserMapper userMapper = mock(UserMapper.class);
 
         TestContext() {
-            PoiEntity poi = new PoiEntity();
-            poi.id = 9L;
-            poi.name = "Library";
-            poi.category = "STUDY";
-            poi.locationText = "Central campus";
-            poi.openStatus = "OPEN";
-            poi.tags = "quiet,study";
+            PoiEntity poi = poi(9L, "Library", "STUDY", "quiet,study,library");
             when(poiMapper.selectById(9L)).thenReturn(poi);
 
             UserEntity user = new UserEntity();
@@ -183,5 +235,16 @@ class DiscoverServiceTest {
             when(likeMapper.selectOne(any())).thenReturn(null);
             when(commentMapper.selectList(any())).thenReturn(List.of());
         }
+    }
+
+    private static PoiEntity poi(Long id, String name, String category, String tags) {
+        PoiEntity poi = new PoiEntity();
+        poi.id = id;
+        poi.name = name;
+        poi.category = category;
+        poi.locationText = "Central campus";
+        poi.openStatus = "OPEN";
+        poi.tags = tags;
+        return poi;
     }
 }

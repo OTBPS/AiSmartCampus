@@ -12,6 +12,7 @@
       <div class="nav-section">
         <p class="nav-section-title">{{ $t('nav.user') }}</p>
         <RouterLink class="nav-link" to="/map-chat"><MapLocation />{{ $t('nav.map') }}</RouterLink>
+        <RouterLink class="nav-link" to="/weather"><Sunny />{{ $t('nav.weather') }}</RouterLink>
         <RouterLink class="nav-link" to="/discover"><Collection />{{ $t('nav.discover') }}</RouterLink>
         <RouterLink class="nav-link" to="/profile"><User />{{ $t('nav.profile') }}</RouterLink>
       </div>
@@ -20,6 +21,7 @@
         <p class="nav-section-title">{{ $t('nav.admin') }}</p>
         <RouterLink class="nav-link" to="/admin/dashboard"><DataAnalysis />{{ $t('nav.dashboard') }}</RouterLink>
         <RouterLink class="nav-link" to="/admin/pois"><Location />{{ $t('nav.poiManage') }}</RouterLink>
+        <RouterLink class="nav-link" to="/admin/accounts"><UserFilled />{{ $t('nav.accountManage') }}</RouterLink>
         <RouterLink class="nav-link" to="/admin/feedback"><Tickets />{{ $t('nav.feedbackReview') }}</RouterLink>
         <RouterLink class="nav-link" to="/admin/discover"><Document />{{ $t('nav.discoverManage') }}</RouterLink>
         <RouterLink class="nav-link" to="/admin/ai-logs"><ChatLineRound />{{ $t('nav.aiLogs') }}</RouterLink>

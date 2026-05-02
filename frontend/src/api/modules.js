@@ -46,6 +46,17 @@ export const discoverApi = {
   adminDelete: (id) => http.delete(`/discover/admin/posts/${id}`)
 }
 
+export const weatherApi = {
+  campus: (params) => http.get('/weather/campus', { params })
+}
+
+export const accountApi = {
+  list: (params) => http.get('/admin/accounts', { params }),
+  create: (payload) => http.post('/admin/accounts', payload),
+  update: (id, payload) => http.put(`/admin/accounts/${id}`, payload),
+  deactivate: (id) => http.delete(`/admin/accounts/${id}`)
+}
+
 export const adminApi = {
   dashboard: () => http.get('/admin/dashboard')
 }

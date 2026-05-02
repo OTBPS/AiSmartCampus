@@ -27,3 +27,8 @@ app:
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       model: ${DEEPSEEK_MODEL:deepseek-chat}
       timeout-seconds: ${DEEPSEEK_TIMEOUT_SECONDS:20}
+  weather:
+    qweather:
+      api-key: ${QWEATHER_API_KEY:}
+      base-url: ${QWEATHER_BASE_URL:https://nc2pg7kpbt.re.qweatherapi.com}
+      timeout-seconds: ${QWEATHER_TIMEOUT_SECONDS:8}

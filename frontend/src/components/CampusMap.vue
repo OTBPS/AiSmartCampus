@@ -20,7 +20,7 @@
         v-for="point in routePoints"
         :key="`route-point-${point.id}`"
         class="route-endpoint"
-        :class="point.type"
+        :class="[point.type, { shelter: point.shelter }]"
         :style="{ left: `${point.x}%`, top: `${point.y}%` }"
       >
         {{ point.label }}
@@ -29,7 +29,7 @@
         v-for="poi in normalizedPois"
         :key="poi.id"
         class="pin"
-        :class="{ active: isActivePoi(poi.id) }"
+        :class="{ active: isActivePoi(poi.id), 'shelter-candidate': isShelterCandidate(poi.id) }"
         :style="{ left: `${poi.x}%`, top: `${poi.y}%` }"
         type="button"
         :aria-label="poi.name"
@@ -115,7 +115,8 @@ const normalizedPois = computed(() => {
 const routePoints = computed(() => routePoisByAction().map((poi, index, list) => ({
   ...poi,
   type: index === 0 ? 'start' : index === list.length - 1 ? 'end' : 'waypoint',
-  label: routePointLabel(index, list.length)
+  shelter: isShelterWaypoint(poi.id),
+  label: routePointLabel(index, list.length, poi)
 })))
 
 const routeLines = computed(() => {
@@ -255,7 +256,11 @@ function renderSegmentedRoute(routePois) {
     const marker = new AMapRef.Marker({
       position: poiLngLat(poi),
       anchor: 'bottom-center',
-      content: endpointContent(routePointLabel(index, routePois.length), index === 0 ? 'start' : index === routePois.length - 1 ? 'end' : 'waypoint')
+      content: endpointContent(
+        routePointLabel(index, routePois.length, poi),
+        index === 0 ? 'start' : index === routePois.length - 1 ? 'end' : 'waypoint',
+        isShelterWaypoint(poi.id)
+      )
     })
     marker.setMap(map)
     routePointMarkers.push(marker)
@@ -391,18 +396,35 @@ function poiLngLat(poi) {
 
 function markerContent(poi) {
   const active = isActivePoi(poi.id) ? ' active' : ''
+  const shelterCandidate = isShelterCandidate(poi.id) ? ' shelter-candidate' : ''
   const initial = categoryInitial(poi.category)
-  return `<div class="amap-poi-marker${active}"><span>${escapeHtml(initial)}</span><b>${escapeHtml(poi.name || '')}</b></div>`
+  const candidateLabel = isShelterCandidate(poi.id)
+    ? `<em>${escapeHtml(locale.value === 'en-US' ? 'Shelter candidate' : '\u5019\u9009\u906e\u853d\u70b9')}</em>`
+    : ''
+  return `<div class="amap-poi-marker${active}${shelterCandidate}"><span>${escapeHtml(initial)}</span><b>${escapeHtml(poi.name || '')}</b>${candidateLabel}</div>`
 }
 
-function endpointContent(label, type) {
-  return `<div class="amap-route-endpoint ${type}">${escapeHtml(label)}</div>`
+function endpointContent(label, type, shelter = false) {
+  return `<div class="amap-route-endpoint ${type}${shelter ? ' shelter' : ''}">${escapeHtml(label)}</div>`
 }
 
-function routePointLabel(index, total) {
+function routePointLabel(index, total, poi = null) {
   if (index === 0) return locale.value === 'en-US' ? 'Start' : '\u8d77\u70b9'
   if (index === total - 1) return locale.value === 'en-US' ? 'End' : '\u7ec8\u70b9'
+  if (isShelterWaypoint(poi?.id)) return locale.value === 'en-US' ? 'Shelter' : '\u906e\u853d\u70b9'
   return locale.value === 'en-US' ? `Via ${index}` : `\u9014\u7ecf${index}`
+}
+
+function isShelterWaypoint(id) {
+  const ids = props.routeAction?.payload?.shelterWaypointIds || []
+  return ids.includes(id)
+}
+
+function isShelterCandidate(id) {
+  if (props.routeAction?.payload?.weatherAdjusted) return false
+  const ids = props.routeAction?.payload?.shelterCandidateIds || []
+  const routeIds = props.routeAction?.poiIds || []
+  return ids.includes(id) && !routeIds.includes(id) && !isShelterWaypoint(id)
 }
 
 function contextLabel(key) {

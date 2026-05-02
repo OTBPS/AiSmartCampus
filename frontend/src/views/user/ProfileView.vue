@@ -11,7 +11,6 @@
         <div class="profile-table-head">
           <div class="profile-head-copy">
             <h3>{{ $t('profile.aiHistory') }}</h3>
-            <span>{{ $t('profile.aiHistoryClickTip') }}</span>
           </div>
           <el-button size="small" type="danger" plain :disabled="!aiLogs.length" @click="confirmClearAiLogs">
             {{ $t('profile.clearAiHistory') }}
@@ -37,7 +36,6 @@
       <section class="table-panel profile-feedback-panel">
         <div class="profile-table-head">
           <h3>{{ $t('profile.myFeedback') }}</h3>
-          <span>{{ $t('profile.feedbackClickTip') }}</span>
         </div>
         <el-table
           :data="feedback"
@@ -58,7 +56,6 @@
         <div class="profile-table-head">
           <div class="profile-head-copy">
             <h3>{{ localText('discoverNotes') }}</h3>
-            <span>{{ localText('notesTip') }}</span>
           </div>
         </div>
         <el-radio-group v-model="noteTab" class="profile-note-tabs">
@@ -78,7 +75,12 @@
               <span>{{ item.poiName }} · {{ formatTime(item.createdAt) }}</span>
             </div>
             <div class="profile-note-metrics">
-              <span><el-icon><Star /></el-icon>{{ item.likeCount }}</span>
+              <span class="profile-note-like" :class="{ active: item.liked }">
+                <svg class="note-heart-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 21s-6.9-4.4-9.3-8.4C.8 9.3 2.4 5.3 6 4.5c2-.4 3.8.5 5 2 1.2-1.5 3-2.4 5-2 3.6.8 5.2 4.8 3.3 8.1C18.9 16.6 12 21 12 21Z" />
+                </svg>
+                {{ item.likeCount }}
+              </span>
               <span><el-icon><CollectionTag /></el-icon>{{ item.favoriteCount }}</span>
             </div>
           </button>

@@ -64,6 +64,12 @@ public class MockAiService {
 
     private AiChatResponse buildResponse(String message, String locale, AiChatRequest.RouteContext routeContext) {
         String normalized = normalizeText(message);
+        if (isNoteQuestion(normalized)) {
+            return findNote(locale);
+        }
+        if (isSmallTalk(normalized)) {
+            return smallTalk(normalized, locale);
+        }
         if (isRouteQuestion(normalized) || isPlainChineseRouteQuestion(normalized) || looksLikeRouteWithContext(message, routeContext)) {
             return routeHelp(message, locale, routeContext);
         }
@@ -71,6 +77,32 @@ public class MockAiService {
             return recommendPlace(message, locale);
         }
         return findPoi(message, locale);
+    }
+
+    private AiChatResponse findNote(String locale) {
+        return base("find_note", text(locale,
+                "\u6211\u4f1a\u4ece\u53d1\u73b0 note \u4e2d\u5bfb\u627e\u76f8\u5173\u5185\u5bb9\u3002",
+                "I will search related discover notes."), List.of());
+    }
+
+    private AiChatResponse smallTalk(String normalized, String locale) {
+        String reply;
+        if (containsAny(normalized, "thanks", "thankyou", "\u8c22\u8c22", "\u591a\u8c22")) {
+            reply = text(locale, "\u4e0d\u5ba2\u6c14\u3002", "You're welcome.");
+        } else if (containsAny(normalized, "help", "\u5e2e\u52a9", "\u600e\u4e48\u7528")) {
+            reply = text(locale,
+                    "\u6211\u53ef\u4ee5\u5e2e\u4f60\u67e5\u6821\u56ed\u5730\u70b9\u3001\u89c4\u5212\u8def\u7ebf\u3001\u63a8\u8350\u81ea\u4e60\u70b9\u6216\u7ed3\u5408\u5929\u6c14\u7ed9\u51fa\u5efa\u8bae\u3002",
+                    "I can help with campus places, routes, weather, and study tips.");
+        } else if (containsAny(normalized, "whoareyou", "\u4f60\u662f\u8c01")) {
+            reply = text(locale,
+                    "\u6211\u662f SmartCampus \u7684 AI \u5730\u56fe\u52a9\u624b\u3002",
+                    "I am the SmartCampus AI map assistant.");
+        } else {
+            reply = text(locale,
+                    "\u4f60\u597d\uff0c\u6211\u53ef\u4ee5\u5e2e\u4f60\u67e5\u5730\u70b9\u3001\u89c4\u5212\u8def\u7ebf\u6216\u63a8\u8350\u6821\u56ed\u573a\u6240\u3002",
+                    "Hi, I can help with campus places, routes, weather, and study tips.");
+        }
+        return base("small_talk", reply, List.of());
     }
 
     private AiChatResponse findPoi(String message, String locale) {
@@ -313,7 +345,7 @@ public class MockAiService {
     private boolean isDestinationOnlyRouteText(String message) {
         String normalized = normalizeText(message);
         boolean hasOriginWord = containsAny(normalized, "from", "start", "\u4ece", "\u51fa\u53d1");
-        boolean hasDestinationWord = containsAny(normalized, "to", "go", "destination", "\u5230", "\u53bb");
+        boolean hasDestinationWord = containsAny(normalized, "to", "go", "destination", "\u5230", "\u53bb", "\u524d\u5f80", "\u5f80");
         return hasDestinationWord && !hasOriginWord;
     }
 
@@ -344,7 +376,7 @@ public class MockAiService {
         }
         String normalized = normalizeText(message);
         return isDestinationOnlyRouteText(message)
-                || containsAny(normalized, "route", "directions", "to", "go", "\u8def\u7ebf", "\u5230", "\u53bb");
+                || containsAny(normalized, "route", "directions", "to", "go", "\u8def\u7ebf", "\u5230", "\u53bb", "\u524d\u5f80", "\u5bfc\u822a");
     }
 
     private boolean containsAny(String text, String... candidates) {
@@ -356,7 +388,38 @@ public class MockAiService {
         return false;
     }
 
+    private boolean isSmallTalk(String normalized) {
+        if (normalized == null || normalized.isBlank()) {
+            return true;
+        }
+        if (containsAny(normalized, "hello", "hi", "hey", "thanks", "thankyou", "help", "whoareyou",
+                "\u4f60\u597d", "\u55e8", "\u54c8\u55bd", "\u8c22\u8c22", "\u591a\u8c22", "\u5e2e\u52a9", "\u600e\u4e48\u7528", "\u4f60\u662f\u8c01")) {
+            return true;
+        }
+        return normalized.matches("[a-z?.!,']{1,12}")
+                && !containsAny(normalized, "route", "directions", "recommend", "study", "library", "canteen", "print", "weather",
+                "\u8def\u7ebf", "\u63a8\u8350", "\u81ea\u4e60", "\u56fe\u4e66\u9986", "\u98df\u5802", "\u6253\u5370", "\u5929\u6c14");
+    }
+
+    private boolean isNoteQuestion(String normalized) {
+        if (normalized == null || normalized.isBlank()) {
+            return false;
+        }
+        boolean hasNoteWord = containsAny(normalized,
+                "note", "notes", "comment", "comments", "review", "reviews",
+                "\u7b14\u8bb0", "\u8bc4\u8bba", "\u8bc4\u4ef7", "\u7ecf\u9a8c");
+        if (!hasNoteWord) {
+            return false;
+        }
+        return containsAny(normalized,
+                "find", "show", "search", "about", "related", "place", "poi", "on",
+                "\u627e", "\u67e5", "\u770b", "\u5173\u4e8e", "\u6709\u5173", "\u5730\u70b9", "\u5730\u65b9");
+    }
+
     private boolean isRouteQuestion(String normalized) {
+        if (hasPlainChineseRoutePattern(normalized)) {
+            return true;
+        }
         return (normalized.contains("从") && (normalized.contains("去") || normalized.contains("到")))
                 || normalized.contains("路线")
                 || normalized.contains("怎么走")
@@ -477,8 +540,11 @@ public class MockAiService {
                 Map.entry("gym", "gym"),
                 Map.entry("observationfield", "observation")
         );
-        for (Map.Entry<String, String> entry : aliases.entrySet()) {
+        for (Map.Entry<String, String> entry : orderedAliases(aliases)) {
             if (normalized.contains(normalizeText(entry.getKey()))) {
+                if (aliasCoveredByMatchedPoi(matched, entry.getKey(), entry.getValue(), normalized)) {
+                    continue;
+                }
                 candidates.stream()
                         .filter(poi -> normalizeText(poi.name + poi.tags).contains(normalizeText(entry.getValue())))
                         .findFirst()
@@ -493,6 +559,37 @@ public class MockAiService {
                 .sorted(Comparator.comparingInt(poi -> routeMentionIndex(poi, normalized)))
                 .limit(6)
                 .toList();
+    }
+
+    private List<Map.Entry<String, String>> orderedAliases(Map<String, String> aliases) {
+        return aliases.entrySet().stream()
+                .sorted(Comparator.comparingInt((Map.Entry<String, String> entry) -> normalizeText(entry.getKey()).length()).reversed())
+                .toList();
+    }
+
+    private boolean aliasCoveredByMatchedPoi(List<PoiEntity> matched, String alias, String value, String normalized) {
+        String aliasText = normalizeText(alias);
+        String valueText = normalizeText(value);
+        if (!normalized.contains(aliasText)) {
+            return false;
+        }
+        boolean broadAlias = isBroadPoiAlias(valueText);
+        return matched.stream().anyMatch(poi -> {
+            String poiName = normalizeText(poi.name);
+            String poiText = normalizeText(poi.name + "," + poi.category + "," + poi.tags);
+            if (!poiText.contains(valueText)) {
+                return false;
+            }
+            if (!poiName.isBlank() && normalized.contains(poiName)) {
+                return true;
+            }
+            return broadAlias && routeMentionIndex(poi, normalized) != Integer.MAX_VALUE;
+        });
+    }
+
+    private boolean isBroadPoiAlias(String value) {
+        return List.of("canteen", "dining", "study", "teaching", "dorm", "print", "clinic", "hospital", "library")
+                .contains(value);
     }
 
     private String normalizeText(String text) {
@@ -604,9 +701,17 @@ public class MockAiService {
     }
 
     private boolean isPlainChineseRouteQuestion(String normalized) {
+        if (hasPlainChineseRoutePattern(normalized)) {
+            return true;
+        }
         return (normalized.contains("从") && (normalized.contains("去") || normalized.contains("到")))
                 || normalized.contains("路线")
                 || normalized.contains("怎么走");
+    }
+
+    private boolean hasPlainChineseRoutePattern(String normalized) {
+        return (normalized.contains("\u4ece") && containsAny(normalized, "\u5230", "\u53bb", "\u524d\u5f80", "\u5f80"))
+                || containsAny(normalized, "\u8def\u7ebf", "\u600e\u4e48\u8d70", "\u5bfc\u822a", "\u8def\u5f84");
     }
 
     private boolean isPlainChineseRecommendationQuestion(String normalized) {
@@ -657,8 +762,11 @@ public class MockAiService {
                 Map.entry("风云剧场", "Fengyun"),
                 Map.entry("校医院", "clinic")
         );
-        for (Map.Entry<String, String> entry : aliases.entrySet()) {
+        for (Map.Entry<String, String> entry : orderedAliases(aliases)) {
             if (normalized.contains(normalizeText(entry.getKey()))) {
+                if (aliasCoveredByMatchedPoi(matched, entry.getKey(), entry.getValue(), normalized)) {
+                    continue;
+                }
                 candidates.stream()
                         .filter(poi -> normalizeText(poi.name + poi.tags).contains(normalizeText(entry.getValue())))
                         .findFirst()

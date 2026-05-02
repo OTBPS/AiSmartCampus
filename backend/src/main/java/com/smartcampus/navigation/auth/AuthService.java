@@ -3,6 +3,7 @@ package com.smartcampus.navigation.auth;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.smartcampus.navigation.common.BizException;
 import com.smartcampus.navigation.security.JwtTokenService;
+import com.smartcampus.navigation.user.AccountRules;
 import com.smartcampus.navigation.user.UserEntity;
 import com.smartcampus.navigation.user.UserMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,6 +22,8 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
+        AccountRules.requireValidUsername(request.username);
+        AccountRules.requireValidPassword(request.password);
         UserEntity user = findByUsername(request.username);
         if (user == null || !"ACTIVE".equals(user.status) || !passwordEncoder.matches(request.password, user.passwordHash)) {
             throw new BizException("用户名或密码错误");
@@ -29,12 +32,14 @@ public class AuthService {
     }
 
     public AuthResponse register(RegisterRequest request) {
+        AccountRules.requireValidUsername(request.username);
+        AccountRules.requireValidPassword(request.password);
         if (findByUsername(request.username) != null) {
             throw new BizException("用户名已存在");
         }
         UserEntity user = new UserEntity();
         user.username = request.username;
-        user.displayName = request.displayName;
+        user.displayName = request.username;
         user.passwordHash = passwordEncoder.encode(request.password);
         user.role = "USER";
         user.status = "ACTIVE";
@@ -43,7 +48,7 @@ public class AuthService {
     }
 
     private UserEntity findByUsername(String username) {
-        return userMapper.selectOne(new QueryWrapper<UserEntity>().eq("username", username));
+        return userMapper.selectOne(new QueryWrapper<UserEntity>().apply("BINARY username = {0}", username));
     }
 
     private AuthResponse toResponse(UserEntity user) {

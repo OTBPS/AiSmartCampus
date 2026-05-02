@@ -7,10 +7,13 @@ import com.smartcampus.navigation.poi.PoiMapper;
 import com.smartcampus.navigation.user.UserEntity;
 import com.smartcampus.navigation.user.UserMapper;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -85,6 +88,25 @@ public class DiscoverService {
                 .filter(Objects::nonNull)
                 .filter(post -> "PUBLISHED".equals(post.status))
                 .map(post -> toResponse(post, userId, false))
+                .toList();
+    }
+
+    public List<DiscoverPostResponse> searchPublishedNotes(String keyword, Long userId, int limit) {
+        int max = Math.max(0, limit);
+        if (max == 0) {
+            return List.of();
+        }
+        List<String> tokens = searchTokens(keyword);
+        return postMapper.selectList(
+                        new QueryWrapper<DiscoverPostEntity>()
+                                .eq("status", "PUBLISHED")
+                                .orderByDesc("created_at")
+                ).stream()
+                .map(post -> toResponse(post, userId, false))
+                .filter(post -> tokens.isEmpty() || matchesAnyToken(post, tokens))
+                .sorted(Comparator.comparingLong((DiscoverPostResponse post) -> post.likeCount).reversed()
+                        .thenComparing((DiscoverPostResponse post) -> post.createdAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(max)
                 .toList();
     }
 
@@ -339,5 +361,60 @@ public class DiscoverService {
 
     private String normalizeSort(String sort) {
         return sort == null ? "TIME" : sort.toUpperCase(Locale.ROOT);
+    }
+
+    private List<String> searchTokens(String keyword) {
+        String normalized = normalizeSearchText(keyword);
+        if (!StringUtils.hasText(normalized)) {
+            return List.of();
+        }
+        Set<String> tokens = new LinkedHashSet<>();
+        tokens.add(normalized);
+        addAliasToken(tokens, normalized, "\u56fe\u4e66\u9986", "library");
+        addAliasToken(tokens, normalized, "\u81ea\u4e60", "study");
+        addAliasToken(tokens, normalized, "\u5b66\u4e60", "study");
+        addAliasToken(tokens, normalized, "\u98df\u5802", "canteen");
+        addAliasToken(tokens, normalized, "\u9910\u5385", "dining");
+        addAliasToken(tokens, normalized, "\u6253\u5370", "print");
+        addAliasToken(tokens, normalized, "\u590d\u5370", "copy");
+        addAliasToken(tokens, normalized, "\u660e\u5fb7", "mingde");
+        addAliasToken(tokens, normalized, "\u6587\u5fb7", "wende");
+        addAliasToken(tokens, normalized, "\u5c1a\u8d24", "shangxian");
+        addAliasToken(tokens, normalized, "\u897f\u82d1", "xiyuan");
+        addAliasToken(tokens, normalized, "\u4e2d\u82d1", "zhongyuan");
+        addAliasToken(tokens, normalized, "\u4e1c\u82d1", "dongyuan");
+        addAliasToken(tokens, normalized, "\u4f53\u80b2\u9986", "gym");
+        addAliasToken(tokens, normalized, "\u64cd\u573a", "sports");
+        addAliasToken(tokens, normalized, "\u89c2\u6d4b\u573a", "observation");
+        addAliasToken(tokens, normalized, "\u6821\u533b\u9662", "clinic");
+        return new ArrayList<>(tokens);
+    }
+
+    private void addAliasToken(Set<String> tokens, String normalized, String source, String alias) {
+        if (normalized.contains(normalizeSearchText(source))) {
+            tokens.add(normalizeSearchText(alias));
+        }
+    }
+
+    private boolean matchesAnyToken(DiscoverPostResponse post, List<String> tokens) {
+        String text = normalizeSearchText(String.join(" ",
+                nullToEmpty(post.title),
+                nullToEmpty(post.summary),
+                nullToEmpty(post.body),
+                nullToEmpty(post.category),
+                nullToEmpty(post.poiName),
+                nullToEmpty(post.poiCategory),
+                nullToEmpty(post.poiLocationText),
+                nullToEmpty(post.poiTags)
+        ));
+        return tokens.stream().anyMatch(text::contains);
+    }
+
+    private String normalizeSearchText(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 }

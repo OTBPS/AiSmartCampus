@@ -19,6 +19,41 @@ class MockAiServiceTest {
         assertEquals("find_poi", "find_poi");
         assertEquals("recommend_place", "recommend_place");
         assertEquals("route_help", "route_help");
+        assertEquals("find_note", "find_note");
+        assertEquals("small_talk", "small_talk");
+    }
+
+    @Test
+    void smallTalkReturnsBriefReplyWithoutMapActions() {
+        PoiService poiService = mock(PoiService.class);
+
+        AiChatResponse response = service(poiService).preview("hello", "en-US");
+
+        assertEquals("small_talk", response.intent);
+        assertTrue(response.reply.contains("campus places"));
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
+    void chineseNoteQuestionReturnsFindNoteIntent() {
+        AiChatResponse response = service(mock(PoiService.class)).preview("\u6211\u60f3\u627e\u4e00\u4e0b\u5173\u4e8e\u56fe\u4e66\u9986\u7684\u7b14\u8bb0", "zh-CN");
+
+        assertEquals("find_note", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
+    void englishNoteQuestionReturnsFindNoteIntent() {
+        AiChatResponse response = service(mock(PoiService.class)).preview("show notes about library", "en-US");
+
+        assertEquals("find_note", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
     }
 
     @Test
@@ -129,6 +164,41 @@ class MockAiServiceTest {
         assertEquals("route_help", response.intent);
         assertEquals(List.of(7L, 10L, 1L), response.mapActions.get(0).poiIds);
         assertEquals("text", response.mapActions.get(0).payload.get("source"));
+    }
+
+    @Test
+    void routeHelpDoesNotAddGenericCanteenAliasInsideExactNameAsWaypoint() {
+        PoiEntity zhongyuan = poi(10L, "Zhongyuan Dining Hall", "DINING", "canteen,dining,central-campus", true);
+        PoiEntity xiyuan = poi(11L, "Xiyuan New Canteen", "DINING", "canteen,dining,dinner,west-garden,xiyuan", true);
+        PoiEntity wende = poi(20L, "Wende Building", "TEACHING", "teaching,classroom,course,wende,top20", true);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(zhongyuan, xiyuan, wende));
+
+        AiChatResponse response = service(poiService).preview(
+                "Go from Xiyuan New Canteen to Wende Building",
+                "en-US"
+        );
+
+        assertEquals("route_help", response.intent);
+        assertEquals(List.of(11L, 20L), response.mapActions.get(0).poiIds);
+        assertEquals(List.of(xiyuan, wende), response.pois);
+    }
+
+    @Test
+    void chineseRouteWithForwardWordTriggersRoutePlanning() {
+        PoiEntity xiyuan = poi(11L, "Xiyuan New Canteen", "DINING", "canteen,dining,dinner,west-garden,xiyuan", true);
+        PoiEntity gym = poi(26L, "NUIST Gymnasium", "SPORTS", "sports,gym,basketball,fitness,night-access", false);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(xiyuan, gym));
+
+        AiChatResponse response = service(poiService).preview(
+                "\u6211\u60f3\u4eceXiyuan New Canteen\u524d\u5f80Gym",
+                "zh-CN"
+        );
+
+        assertEquals("route_help", response.intent);
+        assertEquals("draw_route", response.mapActions.get(0).type);
+        assertEquals(List.of(11L, 26L), response.mapActions.get(0).poiIds);
     }
 
     @Test

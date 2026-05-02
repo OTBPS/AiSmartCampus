@@ -3,7 +3,7 @@
     <template v-if="post">
       <div class="page-head note-detail-head">
         <div>
-          <el-button link type="primary" @click="$router.push('/discover')">{{ localText('back') }}</el-button>
+          <el-button link type="primary" @click="handleBack">{{ backLabel }}</el-button>
           <h1>{{ post.title }}</h1>
           <p>{{ post.authorName }} · {{ formatTime(post.createdAt) }}</p>
         </div>
@@ -15,7 +15,9 @@
             :aria-label="localText('like')"
             @click="toggleLike"
           >
-            <el-icon><StarFilled v-if="post.liked" /><Star v-else /></el-icon>
+            <svg class="note-heart-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21s-6.9-4.4-9.3-8.4C.8 9.3 2.4 5.3 6 4.5c2-.4 3.8.5 5 2 1.2-1.5 3-2.4 5-2 3.6.8 5.2 4.8 3.3 8.1C18.9 16.6 12 21 12 21Z" />
+            </svg>
             <span>{{ post.likeCount }}</span>
           </button>
           <button
@@ -68,12 +70,21 @@
         </div>
         <div v-if="post.comments?.length" class="comment-list">
           <article v-for="comment in post.comments" :key="comment.id" class="comment-item">
-            <div>
-              <strong>{{ comment.authorName }}</strong>
-              <span>{{ formatTime(comment.createdAt) }}</span>
+            <div class="comment-main">
+              <div class="comment-meta">
+                <strong>{{ comment.authorName }}</strong>
+                <span>{{ formatTime(comment.createdAt) }}</span>
+              </div>
+              <p>{{ comment.content }}</p>
             </div>
-            <p>{{ comment.content }}</p>
-            <el-button v-if="comment.owner" link type="danger" @click="deleteComment(comment)">{{ localText('delete') }}</el-button>
+            <el-button
+              v-if="comment.owner"
+              class="comment-delete-button"
+              type="danger"
+              @click="deleteComment(comment)"
+            >
+              {{ localText('delete') }}
+            </el-button>
           </article>
         </div>
         <el-empty v-else :description="localText('noComments')" :image-size="90" />
@@ -86,7 +97,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Delete, EditPen, Location } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -102,6 +113,10 @@ const post = ref(null)
 const editorVisible = ref(false)
 const commentText = ref('')
 const commenting = ref(false)
+const cameFromMapChat = computed(() => route.query.from === 'map-chat')
+const backLabel = computed(() => cameFromMapChat.value
+  ? (locale.value === 'en-US' ? 'Back to AI Map' : '\u8fd4\u56de AI \u5730\u56fe')
+  : localText('back'))
 
 onMounted(load)
 watch(() => route.params.id, load)
@@ -162,7 +177,7 @@ async function confirmDelete() {
     })
     await discoverApi.remove(post.value.id)
     ElMessage.success(localText('deleted'))
-    router.push('/discover')
+    router.push(backTarget())
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message)
   }
@@ -178,6 +193,14 @@ function mergePost(updated) {
 
 function backToMap() {
   router.push({ path: '/map-chat', query: { poiId: post.value.poiId } })
+}
+
+function handleBack() {
+  router.push(backTarget())
+}
+
+function backTarget() {
+  return cameFromMapChat.value ? '/map-chat' : '/discover'
 }
 
 function formatTime(value) {

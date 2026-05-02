@@ -64,6 +64,27 @@ class DeepSeekAiServiceTest {
     }
 
     @Test
+    void parserAcceptsFindNoteIntentWithoutMapActions() {
+        DeepSeekAiService service = parserService();
+        String content = """
+                {
+                  "intent": "find_note",
+                  "reply": "I will search related notes.",
+                  "poiIds": [],
+                  "toolCalls": [],
+                  "mapActions": []
+                }
+                """;
+
+        AiChatResponse response = service.parseStructuredResponse(content, "en-US", List.of(printer()));
+
+        assertEquals("find_note", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
     void parserKeepsOrderedMultiPointRouteAndDropsIllegalIds() {
         DeepSeekAiService service = parserService();
         PoiEntity dorm = poi(7L, "Xiyuan Dormitory Area");
