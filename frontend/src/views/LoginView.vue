@@ -1,11 +1,16 @@
 <template>
   <div class="auth-page">
     <section class="auth-hero">
-      <h1>
-        <span>SmartCampus</span>
-        <span>Navigation</span>
-      </h1>
-      <p>{{ $t('auth.intro') }}</p>
+      <span class="auth-school-badge-frame">
+        <img class="auth-school-badge" :src="nuistBadge" alt="NUIST badge" />
+      </span>
+      <div class="auth-brand">
+        <span class="auth-brand-kicker">NUIST</span>
+        <h1>
+          <span>SmartCampus</span>
+          <span>Navigation</span>
+        </h1>
+      </div>
     </section>
     <section class="auth-panel">
       <div class="auth-locale">
@@ -15,7 +20,6 @@
         <template #header>
           <div>
             <strong>{{ mode === 'login' ? $t('auth.loginTitle') : $t('auth.registerTitle') }}</strong>
-            <p style="margin: 6px 0 0; color: var(--scn-muted)">{{ $t('auth.defaultAccount') }}</p>
           </div>
         </template>
         <el-form ref="authFormRef" label-position="top" :model="form" :rules="rules" @submit.prevent>
@@ -45,6 +49,7 @@ import { useI18n } from 'vue-i18n'
 import { authApi } from '../api/modules'
 import { useAuthStore } from '../stores/auth'
 import LocaleSwitch from '../components/LocaleSwitch.vue'
+import nuistBadge from '../assets/login/NUIST_badge2.png'
 
 const router = useRouter()
 const auth = useAuthStore()

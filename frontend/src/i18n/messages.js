@@ -41,6 +41,7 @@ export const messages = {
     nav: {
       subtitle: 'AI 地图导航',
       user: '用户端',
+      userLabel: '用户',
       map: 'AI 地图',
       weather: '天气',
       discover: '发现',
@@ -55,7 +56,9 @@ export const messages = {
       logout: '退出登录',
       peakTitle: '工作日高峰提醒',
       peakWindowRule: '每大节课前 20 分钟',
-      peakTip: '这些时间校园路段更拥挤，建议同学提前出发。'
+      peakTip: '这些时间校园路段更拥挤，建议同学提前出发。',
+      peakOffTip: '不在高峰期',
+      peakActiveTip: '上课高峰期，请提早20分出发'
     },
     auth: {
       intro: '围绕 AI 地图交互、自建校园 POI 数据和反馈修正闭环构建的智慧校园导航第一版演示系统。',
@@ -319,6 +322,7 @@ export const messages = {
     nav: {
       subtitle: 'AI Map Navigation',
       user: 'User',
+      userLabel: 'User',
       map: 'AI Map',
       weather: 'Weather',
       discover: 'Discover',
@@ -333,7 +337,9 @@ export const messages = {
       logout: 'Log Out',
       peakTitle: 'Weekday peak reminder',
       peakWindowRule: '20 minutes before each class block',
-      peakTip: 'Campus paths get busier during these windows. Leave a little earlier.'
+      peakTip: 'Campus paths get busier during these windows. Leave a little earlier.',
+      peakOffTip: 'Off peak',
+      peakActiveTip: 'Class peak. Leave 20 minutes early.'
     },
     auth: {
       intro: 'A first-version smart campus navigation demo built around AI map interaction, self-managed campus POI data, and a feedback correction loop.',

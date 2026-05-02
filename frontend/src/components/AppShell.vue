@@ -2,7 +2,7 @@
   <div class="shell">
     <aside class="side-nav">
       <div class="brand">
-        <span class="brand-mark">SC</span>
+        <img class="brand-mark" :src="nuistBadge" alt="NUIST badge" />
         <span>
           <strong>SmartCampus</strong>
           <span>{{ $t('nav.subtitle') }}</span>
@@ -31,8 +31,9 @@
         <LocaleSwitch />
       </div>
 
-      <div class="nav-section">
-        <p class="nav-section-title">{{ auth.user?.displayName }}</p>
+      <div class="nav-section user-account-section">
+        <p class="nav-user-label">{{ $t('nav.userLabel') }}:</p>
+        <p class="nav-user-name">{{ auth.user?.displayName }}</p>
         <button class="nav-link" type="button" @click="logout"><SwitchButton />{{ $t('nav.logout') }}</button>
       </div>
 
@@ -41,13 +42,14 @@
           <Clock />
           <div>
             <p>{{ $t('nav.peakTitle') }}</p>
-            <span>{{ $t('nav.peakWindowRule') }}</span>
           </div>
         </div>
         <div class="peak-time-grid">
           <span v-for="window in peakWindows" :key="window.label" :class="{ active: window.active }">{{ window.label }}</span>
         </div>
-        <p class="peak-reminder-note" :class="{ 'is-peak': isPeakNow }">{{ $t('nav.peakTip') }}</p>
+        <p class="peak-reminder-note" :class="{ 'is-peak': isPeakNow }">
+          {{ isPeakNow ? $t('nav.peakActiveTip') : $t('nav.peakOffTip') }}
+        </p>
       </section>
     </aside>
 
@@ -62,6 +64,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import LocaleSwitch from './LocaleSwitch.vue'
+import nuistBadge from '../assets/login/NUIST_badge.png'
 
 const auth = useAuthStore()
 const router = useRouter()

@@ -3,7 +3,6 @@
     <div class="page-head">
       <div>
         <h1>{{ $t('admin.dashboardTitle') }}</h1>
-        <p>{{ $t('admin.dashboardSubtitle') }}</p>
       </div>
       <el-button type="primary" @click="load">{{ $t('common.refreshData') }}</el-button>
     </div>
@@ -32,7 +31,6 @@
         <div class="panel-title-row">
           <div>
             <h2>{{ $t('admin.intentDistribution') }}</h2>
-            <p>{{ $t('admin.intentDescription') }}</p>
           </div>
         </div>
         <div class="stat-list">
@@ -53,14 +51,22 @@
         <div class="panel-title-row">
           <div>
             <h2>{{ $t('admin.mapActionDistribution') }}</h2>
-            <p>{{ $t('admin.mapActionDescription') }}</p>
           </div>
         </div>
-        <div class="action-chip-list">
-          <el-tag v-for="item in stats.mapActionStats" :key="item.key" size="large" effect="plain">
-            {{ actionLabel(item.key) }} · {{ item.count }}
-          </el-tag>
-          <el-empty v-if="!stats.mapActionStats.length" :description="$t('admin.noMapActions')" :image-size="70" />
+        <div v-if="stats.mapActionStats.length" class="map-action-chart" role="list" :aria-label="$t('admin.mapActionDistribution')">
+          <div class="map-action-y-axis" aria-hidden="true">
+            <span v-for="tick in mapActionAxisTicks" :key="tick">{{ tick }}</span>
+          </div>
+          <div class="map-action-plot">
+            <div v-for="item in stats.mapActionStats" :key="item.key" class="map-action-bar-item" role="listitem">
+              <strong class="map-action-value">{{ item.count }}</strong>
+              <span class="map-action-bar" :style="{ height: actionBarHeight(item) }" aria-hidden="true" />
+              <span class="map-action-label">{{ actionLabel(item.key) }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="action-empty-state">
+          <el-empty :description="$t('admin.noMapActions')" :image-size="70" />
         </div>
       </section>
 
@@ -68,7 +74,6 @@
         <div class="panel-title-row">
           <div>
             <h2>{{ $t('admin.feedbackStatus') }}</h2>
-            <p>{{ $t('admin.feedbackStatusDescription') }}</p>
           </div>
         </div>
         <div class="status-grid">
@@ -85,7 +90,6 @@
         <div class="panel-title-row">
           <div>
             <h2>{{ $t('admin.hotPois') }}</h2>
-            <p>{{ $t('admin.hotPoisDescription') }}</p>
           </div>
         </div>
         <el-table :data="stats.hotPois" height="245">
@@ -104,7 +108,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
 import { adminApi } from '../../api/modules'
@@ -123,6 +127,13 @@ const stats = reactive({
 
 onMounted(load)
 
+const mapActionMax = computed(() => Math.max(...stats.mapActionStats.map((item) => item.count), 1))
+const mapActionAxisMax = computed(() => niceAxisMax(mapActionMax.value))
+const mapActionAxisTicks = computed(() => {
+  const step = mapActionAxisMax.value / 4
+  return Array.from({ length: 5 }, (_, index) => Math.round(mapActionAxisMax.value - (step * index)))
+})
+
 async function load() {
   Object.assign(stats, await adminApi.dashboard())
 }
@@ -130,6 +141,16 @@ async function load() {
 function barWidth(item, items) {
   const max = Math.max(...items.map((stat) => stat.count), 1)
   return `${Math.max(10, Math.round((item.count / max) * 100))}%`
+}
+
+function actionBarHeight(item) {
+  return `${Math.max(8, Math.round((item.count / mapActionAxisMax.value) * 100))}%`
+}
+
+function niceAxisMax(value) {
+  const raw = Math.max(Number(value) || 0, 1)
+  const step = raw <= 10 ? 2 : raw <= 50 ? 10 : raw <= 100 ? 20 : Math.ceil(raw / 50) * 10
+  return Math.ceil(raw / step) * step
 }
 
 function statusLabel(status) {

@@ -236,6 +236,7 @@ const WEATHER_IMAGE = {
 }
 
 const resultPois = computed(() => lastResponse.value?.pois || [])
+const chatResultPois = computed(() => uniquePois(resultPois.value))
 const noteResults = computed(() => lastResponse.value?.notes || [])
 const isSmallTalkResponse = computed(() => lastResponse.value?.intent === 'small_talk')
 const isNoteResponse = computed(() => lastResponse.value?.intent === 'find_note')
@@ -249,6 +250,9 @@ const displayedPois = computed(() => {
     const routePois = routeAction.value.poiIds.map((id) => findPoiById(id)).filter(Boolean)
     const candidates = shelterCandidatePois()
     if (routePois.length) return uniquePois([...routePois, ...candidates])
+  }
+  if (chatResultPois.value.length) {
+    return chatResultPois.value
   }
   const merged = new Map()
   pois.value.forEach((poi) => merged.set(poi.id, poi))

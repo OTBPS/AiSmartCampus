@@ -3,7 +3,6 @@
     <div class="page-head">
       <div>
         <h1>{{ $t('admin.feedbackTitle') }}</h1>
-        <p>{{ $t('admin.feedbackSubtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-input v-model="keyword" clearable :placeholder="$t('admin.searchFeedbackPlaceholder')" style="width: 230px" />

@@ -3,7 +3,6 @@
     <div class="page-head">
       <div>
         <h1>{{ $t('admin.accountTitle') }}</h1>
-        <p>{{ $t('admin.accountSubtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-button @click="load">{{ $t('common.refresh') }}</el-button>

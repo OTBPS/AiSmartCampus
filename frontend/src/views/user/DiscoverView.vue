@@ -5,11 +5,11 @@
         <h1>{{ $t('discover.title') }}</h1>
       </div>
       <div class="discover-head-actions">
+        <el-button class="discover-create-button" type="primary" @click="openCreate">{{ localText('create') }}</el-button>
         <el-radio-group v-model="sortMode" @change="load">
           <el-radio-button value="TIME">{{ localText('sortTime') }}</el-radio-button>
           <el-radio-button value="LIKES">{{ localText('sortLikes') }}</el-radio-button>
         </el-radio-group>
-        <el-button type="primary" @click="openCreate">{{ localText('create') }}</el-button>
         <el-button @click="load">{{ $t('common.refresh') }}</el-button>
       </div>
     </div>

@@ -3,7 +3,6 @@
     <div class="page-head weather-head">
       <div>
         <h1>{{ $t('weather.title') }}</h1>
-        <p>{{ $t('weather.subtitle') }}</p>
       </div>
       <div class="weather-head-actions">
         <el-select
@@ -40,7 +39,6 @@
               <span>{{ displayWeatherText(weather.now.text) }}</span>
             </div>
           </div>
-          <p>{{ localText('feelsLike') }} {{ valueOrDash(weather.now.feelsLike) }}° · {{ localText('updated') }} {{ formatDateTime(weather.updateTime) }}</p>
         </div>
         <dl class="weather-metrics">
           <div>
@@ -66,7 +64,6 @@
         <div class="panel-title-row">
           <div>
             <h2>{{ localText('hourly') }}</h2>
-            <p>{{ localText('hourlyHint') }}</p>
           </div>
         </div>
         <div class="weather-hourly-strip" role="list">
@@ -116,7 +113,6 @@
         <div class="panel-title-row">
           <div>
             <h2>{{ localText('daily') }}</h2>
-            <p>{{ localText('dailyHint') }}</p>
           </div>
         </div>
         <div class="weather-daily-grid">
