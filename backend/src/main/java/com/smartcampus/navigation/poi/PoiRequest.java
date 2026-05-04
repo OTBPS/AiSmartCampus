@@ -22,4 +22,5 @@ public class PoiRequest {
     public Boolean enabled = true;
     public Integer mapRank;
     public String sourceUrl = "";
+    public String imageUrl;
 }

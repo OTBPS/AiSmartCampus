@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -33,9 +34,6 @@ public class WeatherService {
     }
 
     public WeatherResponse campus(Long poiId, String locale) {
-        if (!qWeatherClient.isConfigured()) {
-            throw new BizException("QWeather API key is not configured");
-        }
         WeatherResponse.WeatherLocation location = resolveLocation(poiId);
         String lang = "en-US".equals(locale) ? "en" : "zh";
         String weatherLocation = location.longitude + "," + location.latitude;
@@ -45,8 +43,64 @@ public class WeatherService {
             return cached.response;
         }
 
-        WeatherResponse response = buildResponse(location, weatherLocation, lang);
+        WeatherResponse response = qWeatherClient.isConfigured()
+                ? buildResponse(location, weatherLocation, lang)
+                : buildDemoResponse(location, "en".equals(lang));
         cache.put(cacheKey, new CacheEntry(response, Instant.now().plus(CACHE_TTL)));
+        return response;
+    }
+
+    private WeatherResponse buildDemoResponse(WeatherResponse.WeatherLocation location, boolean english) {
+        Instant nowTime = Instant.now();
+        WeatherResponse response = new WeatherResponse();
+        response.source = "Demo Weather";
+        response.location = location;
+        response.updateTime = nowTime.toString();
+
+        WeatherResponse.CurrentWeather now = new WeatherResponse.CurrentWeather();
+        now.obsTime = nowTime.toString();
+        now.temp = 24;
+        now.feelsLike = 25;
+        now.text = english ? "Partly cloudy" : "Cloudy";
+        now.icon = "101";
+        now.windDir = english ? "East wind" : "E";
+        now.windScale = "2";
+        now.humidity = 64;
+        now.precip = 0.0;
+        now.pressure = 1012;
+        now.vis = 12;
+        response.now = now;
+
+        for (int i = 1; i <= 24; i++) {
+            WeatherResponse.HourlyWeather item = new WeatherResponse.HourlyWeather();
+            item.fxTime = nowTime.plusSeconds(i * 3600L).toString();
+            item.temp = 23 + (i % 7);
+            item.text = english ? "Partly cloudy" : "Cloudy";
+            item.icon = i % 5 == 0 ? "102" : "101";
+            item.windDir = english ? "East wind" : "E";
+            item.windScale = "2";
+            item.humidity = 62 + (i % 8);
+            item.pop = i % 6 == 0 ? 20 : 10;
+            item.precip = 0.0;
+            response.hourly.add(item);
+        }
+
+        LocalDate today = LocalDate.now();
+        for (int i = 0; i < 7; i++) {
+            WeatherResponse.DailyWeather day = new WeatherResponse.DailyWeather();
+            day.fxDate = today.plusDays(i).toString();
+            day.tempMax = 27 + (i % 3);
+            day.tempMin = 18 + (i % 4);
+            day.textDay = english ? "Partly cloudy" : "Cloudy";
+            day.textNight = english ? "Cloudy" : "Cloudy";
+            day.windDirDay = english ? "East wind" : "E";
+            day.windScaleDay = "2";
+            day.uvIndex = 5;
+            day.precip = 0.0;
+            response.daily.add(day);
+        }
+
+        response.recommendations = recommendations(response, english);
         return response;
     }
 

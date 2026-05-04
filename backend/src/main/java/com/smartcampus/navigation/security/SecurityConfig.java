@@ -1,5 +1,6 @@
 package com.smartcampus.navigation.security;
 
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,6 +33,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) ->
+                                response.sendError(HttpServletResponse.SC_UNAUTHORIZED))
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/admin/**", "/api/pois/admin/**", "/api/feedback/admin/**", "/api/discover/admin/**", "/api/ai/admin/**").hasRole("ADMIN")
@@ -64,4 +69,3 @@ public class SecurityConfig {
         return configuration.getAuthenticationManager();
     }
 }
-

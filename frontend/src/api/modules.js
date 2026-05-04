@@ -11,7 +11,13 @@ export const poiApi = {
   get: (id) => http.get(`/pois/${id}`),
   create: (payload) => http.post('/pois/admin', payload),
   update: (id, payload) => http.put(`/pois/admin/${id}`, payload),
-  updateStatus: (id, payload) => http.put(`/pois/admin/${id}/status`, payload)
+  updateStatus: (id, payload) => http.put(`/pois/admin/${id}/status`, payload),
+  uploadImage: (id, file) => {
+    const formData = new FormData()
+    formData.append('image', file)
+    return http.post(`/pois/admin/${id}/image`, formData)
+  },
+  deleteImage: (id) => http.delete(`/pois/admin/${id}/image`)
 }
 
 export const aiApi = {
@@ -33,6 +39,12 @@ export const discoverApi = {
   post: (id) => http.get(`/discover/posts/${id}`),
   create: (payload) => http.post('/discover/posts', payload),
   update: (id, payload) => http.put(`/discover/posts/${id}`, payload),
+  uploadImages: (id, files) => {
+    const formData = new FormData()
+    files.forEach((file) => formData.append('images', file))
+    return http.post(`/discover/posts/${id}/images`, formData)
+  },
+  deleteImage: (postId, imageId) => http.delete(`/discover/posts/${postId}/images/${imageId}`),
   remove: (id) => http.delete(`/discover/posts/${id}`),
   like: (id) => http.post(`/discover/posts/${id}/like`),
   unlike: (id) => http.delete(`/discover/posts/${id}/like`),

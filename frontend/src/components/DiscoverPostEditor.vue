@@ -39,6 +39,36 @@
       <el-form-item :label="localText('body')">
         <el-input v-model="form.body" type="textarea" :rows="8" maxlength="3000" show-word-limit />
       </el-form-item>
+      <el-form-item :label="localText('images')">
+        <div class="note-image-uploader">
+          <div v-if="imagePreviews.length" class="note-image-preview-grid">
+            <div v-for="image in imagePreviews" :key="image.key" class="note-image-preview">
+              <img :src="image.url" :alt="localText('imageAlt')" />
+              <button class="note-image-remove" type="button" :aria-label="localText('removeImage')" @click="removeImage(image)">
+                <el-icon><CloseBold /></el-icon>
+              </button>
+            </div>
+          </div>
+          <button
+            v-if="imagePreviews.length < maxNoteImages"
+            class="note-image-add"
+            type="button"
+            @click="triggerImagePicker"
+          >
+            <el-icon><Plus /></el-icon>
+            {{ localText('addImages') }}
+          </button>
+          <input
+            ref="imageInput"
+            class="note-image-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            @change="selectImages"
+          />
+          <p>{{ localText('imageHint') }}</p>
+        </div>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ localText('cancel') }}</el-button>
@@ -48,7 +78,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { CloseBold, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { discoverApi, poiApi } from '../api/modules'
@@ -63,9 +94,31 @@ const { locale } = useI18n()
 const saving = ref(false)
 const poiLoading = ref(false)
 const poiOptions = ref([])
+const imageInput = ref(null)
+const existingImages = ref([])
+const removedImageIds = ref([])
+const pendingImages = ref([])
 const form = reactive(emptyForm())
+const maxNoteImages = 3
+const maxNoteImageBytes = 5 * 1024 * 1024
+const allowedNoteImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
 const selectedPoi = computed(() => poiOptions.value.find((poi) => poi.id === form.poiId))
+const imagePreviews = computed(() => [
+  ...existingImages.value.map((image) => ({
+    key: `existing-${image.id}`,
+    id: image.id,
+    url: image.imageUrl,
+    existing: true
+  })),
+  ...pendingImages.value.map((image) => ({
+    key: image.key,
+    url: image.previewUrl,
+    existing: false
+  }))
+])
+
+onBeforeUnmount(clearPendingImageUrls)
 
 watch(
   () => props.modelValue,
@@ -86,6 +139,10 @@ function emptyForm() {
 }
 
 function hydrateForm() {
+  clearPendingImageUrls()
+  pendingImages.value = []
+  removedImageIds.value = []
+  existingImages.value = [...(props.post?.images || [])]
   Object.assign(form, emptyForm(), {
     title: props.post?.title || '',
     body: props.post?.body || '',
@@ -131,17 +188,81 @@ async function save() {
       poiId: form.poiId,
       rating: form.rating || 4
     }
-    const saved = props.post?.id
+    let saved = props.post?.id
       ? await discoverApi.update(props.post.id, payload)
       : await discoverApi.create(payload)
+    let imageFailed = false
+    try {
+      for (const imageId of removedImageIds.value) {
+        saved = await discoverApi.deleteImage(saved.id, imageId)
+      }
+      if (pendingImages.value.length) {
+        saved = await discoverApi.uploadImages(saved.id, pendingImages.value.map((image) => image.file))
+      }
+    } catch (error) {
+      imageFailed = true
+      ElMessage.warning(localText('imageUploadFailed'))
+    }
     emit('saved', saved)
     emit('update:modelValue', false)
-    ElMessage.success(localText('saved'))
+    clearPendingImageUrls()
+    pendingImages.value = []
+    if (!imageFailed) {
+      ElMessage.success(localText('saved'))
+    }
   } catch (error) {
     ElMessage.error(error.message)
   } finally {
     saving.value = false
   }
+}
+
+function triggerImagePicker() {
+  imageInput.value?.click()
+}
+
+function selectImages(event) {
+  const files = Array.from(event.target.files || [])
+  const availableSlots = maxNoteImages - imagePreviews.value.length
+  if (availableSlots <= 0) {
+    ElMessage.warning(localText('imageLimit'))
+    event.target.value = ''
+    return
+  }
+  if (files.length > availableSlots) {
+    ElMessage.warning(localText('imageLimit'))
+  }
+  files.slice(0, availableSlots).forEach((file) => {
+    if (!allowedNoteImageTypes.has(file.type)) {
+      ElMessage.warning(localText('imageTypeError'))
+      return
+    }
+    if (file.size > maxNoteImageBytes) {
+      ElMessage.warning(localText('imageSizeError'))
+      return
+    }
+    pendingImages.value.push({
+      key: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      previewUrl: URL.createObjectURL(file)
+    })
+  })
+  event.target.value = ''
+}
+
+function removeImage(image) {
+  if (image.existing) {
+    existingImages.value = existingImages.value.filter((item) => item.id !== image.id)
+    removedImageIds.value = [...removedImageIds.value, image.id]
+    return
+  }
+  const removed = pendingImages.value.find((item) => item.key === image.key)
+  if (removed) URL.revokeObjectURL(removed.previewUrl)
+  pendingImages.value = pendingImages.value.filter((item) => item.key !== image.key)
+}
+
+function clearPendingImageUrls() {
+  pendingImages.value.forEach((image) => URL.revokeObjectURL(image.previewUrl))
 }
 
 function localText(key) {
@@ -153,10 +274,19 @@ function localText(key) {
     placePlaceholder: '输入关键词搜索地点',
     rating: '地点评价',
     body: '正文',
+    images: '图片',
+    addImages: '添加图片',
+    imageHint: '最多 3 张，支持 JPG、PNG、WEBP、GIF，单张不超过 5MB',
+    imageAlt: 'note 图片',
+    removeImage: '删除图片',
     cancel: '取消',
     save: '保存',
     required: '请填写标题、正文并选择地点',
-    saved: 'note 已保存'
+    saved: 'note 已保存',
+    imageLimit: '每条 note 最多上传 3 张图片',
+    imageTypeError: '图片只支持 JPG、PNG、WEBP 或 GIF',
+    imageSizeError: '单张图片不能超过 5MB',
+    imageUploadFailed: 'note 已保存，但图片上传失败'
   }
   const en = {
     createTitle: 'Create note',
@@ -166,10 +296,19 @@ function localText(key) {
     placePlaceholder: 'Search places by keyword',
     rating: 'Place rating',
     body: 'Body',
+    images: 'Images',
+    addImages: 'Add images',
+    imageHint: 'Up to 3 images. JPG, PNG, WEBP, or GIF. Max 5MB each.',
+    imageAlt: 'Note image',
+    removeImage: 'Remove image',
     cancel: 'Cancel',
     save: 'Save',
     required: 'Enter title, body, and place',
-    saved: 'Note saved'
+    saved: 'Note saved',
+    imageLimit: 'Each note can have at most 3 images',
+    imageTypeError: 'Images must be JPG, PNG, WEBP, or GIF',
+    imageSizeError: 'Each image must be 5MB or smaller',
+    imageUploadFailed: 'Note saved, but image upload failed'
   }
   return (locale.value === 'en-US' ? en : zh)[key] || key
 }

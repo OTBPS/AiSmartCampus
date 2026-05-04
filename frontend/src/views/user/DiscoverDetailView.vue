@@ -41,6 +41,18 @@
             <el-tag effect="plain">{{ post.category }}</el-tag>
             <el-rate :model-value="post.rating || 0" disabled />
           </header>
+          <div v-if="noteImages.length" class="note-detail-gallery">
+            <el-image
+              v-for="(image, index) in noteImages"
+              :key="image.id"
+              :src="image.imageUrl"
+              :alt="localText('imageAlt')"
+              fit="cover"
+              :preview-src-list="previewImageUrls"
+              :initial-index="index"
+              :preview-teleported="true"
+            />
+          </div>
           <p class="note-body">{{ post.body }}</p>
         </section>
 
@@ -117,6 +129,8 @@ const cameFromMapChat = computed(() => route.query.from === 'map-chat')
 const backLabel = computed(() => cameFromMapChat.value
   ? (locale.value === 'en-US' ? 'Back to AI Map' : '\u8fd4\u56de AI \u5730\u56fe')
   : localText('back'))
+const noteImages = computed(() => post.value?.images || [])
+const previewImageUrls = computed(() => noteImages.value.map((image) => image.imageUrl))
 
 onMounted(load)
 watch(() => route.params.id, load)
@@ -229,7 +243,8 @@ function localText(key) {
     notFound: '未找到 note',
     deleteTitle: '删除 note',
     deleteMessage: '确定删除这条 note 吗？删除后不可恢复。',
-    deleted: 'note 已删除'
+    deleted: 'note 已删除',
+    imageAlt: 'note 图片'
   }
   const en = {
     back: 'Back to Discover',
@@ -249,7 +264,8 @@ function localText(key) {
     notFound: 'Note not found',
     deleteTitle: 'Delete note',
     deleteMessage: 'Delete this note? This cannot be undone.',
-    deleted: 'Note deleted'
+    deleted: 'Note deleted',
+    imageAlt: 'Note image'
   }
   return (locale.value === 'en-US' ? en : zh)[key] || key
 }

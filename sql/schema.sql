@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS ai_message;
 DROP TABLE IF EXISTS discover_favorite;
 DROP TABLE IF EXISTS discover_like;
 DROP TABLE IF EXISTS discover_comment;
+DROP TABLE IF EXISTS discover_post_image;
 DROP TABLE IF EXISTS discover_post;
 DROP TABLE IF EXISTS feedback;
 DROP TABLE IF EXISTS poi;
@@ -34,6 +35,7 @@ CREATE TABLE poi (
   enabled TINYINT(1) NOT NULL DEFAULT 1,
   map_rank INT NULL,
   source_url VARCHAR(500) NOT NULL DEFAULT '',
+  image_url VARCHAR(500) NOT NULL DEFAULT '',
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_poi_map_rank (map_rank),
   CHECK (map_rank IS NULL OR (map_rank BETWEEN 1 AND 20))
@@ -67,6 +69,15 @@ CREATE TABLE discover_post (
   INDEX idx_discover_post_user (user_id),
   INDEX idx_discover_post_poi (poi_id),
   INDEX idx_discover_post_status_created (status, created_at)
+);
+
+CREATE TABLE discover_post_image (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  post_id BIGINT NOT NULL,
+  image_url VARCHAR(500) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_discover_post_image_post (post_id)
 );
 
 CREATE TABLE discover_comment (

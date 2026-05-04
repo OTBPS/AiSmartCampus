@@ -209,6 +209,7 @@ const lastResponse = ref(null)
 const highlightedIds = ref([])
 const selectedShelterCandidateIds = ref([])
 const shelterCandidatesDismissed = ref(false)
+const chatStateReady = ref(false)
 const routeDraft = reactive({ origin: null, destination: null, waypoints: [] })
 const messagesRef = ref(null)
 const feedbackVisible = ref(false)
@@ -328,10 +329,12 @@ const recommendationNote = computed(() => stripContextPrefix(aiContextNote.value
 const aiContextLabel = computed(() => (routeSummary.value ? localText('routeContext') : localText('recommendReason')))
 
 onMounted(async () => {
-  await loadPois()
   restoreChatState()
+  await loadPois()
   await applyPoiFromRoute()
   applyDraftFromRoute()
+  chatStateReady.value = true
+  persistChatState()
 })
 
 watch(
@@ -375,7 +378,9 @@ watch(
 
 async function loadPois() {
   pois.value = await poiApi.list({ enabledOnly: true, mapOnly: true, limit: 20 })
-  selectedPoi.value = pois.value[0] || null
+  if (!selectedPoi.value) {
+    selectedPoi.value = pois.value[0] || null
+  }
 }
 
 function defaultMessages() {
@@ -411,6 +416,7 @@ function restoreChatState() {
 }
 
 function persistChatState() {
+  if (!chatStateReady.value) return
   try {
     sessionStorage.setItem(MAP_CHAT_STATE_KEY, JSON.stringify({
       messages: messages.value,
@@ -765,10 +771,23 @@ function openStatusText(status) {
 }
 
 function choosePoiImage(poi) {
+  const imageUrl = normalizePoiImageUrl(poi?.imageUrl)
+  if (imageUrl) {
+    return {
+      key: `poi-${poi?.id || 'custom'}-${imageUrl}`,
+      url: imageUrl,
+      alt: poi?.name || 'POI image'
+    }
+  }
   const text = `${poi?.name || ''} ${poi?.category || ''} ${poi?.tags || ''}`.toLowerCase()
   if (/(library|reading|study|图书|阅览|自习)/.test(text)) return LIBRARY_IMAGE
   if (/(weather|meteorology|radar|气象|雷达|观测)/.test(text)) return WEATHER_IMAGE
   return CAMPUS_IMAGE
+}
+
+function normalizePoiImageUrl(value) {
+  const url = `${value || ''}`.trim()
+  return url.toLowerCase() === 'null' ? '' : url
 }
 
 function handlePoiImageError(event) {

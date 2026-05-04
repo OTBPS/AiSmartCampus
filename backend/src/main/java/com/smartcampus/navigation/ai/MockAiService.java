@@ -70,6 +70,9 @@ public class MockAiService {
         if (isSmallTalk(normalized)) {
             return smallTalk(normalized, locale);
         }
+        if (isRankedPlaceQuestion(normalized)) {
+            return recommendRankedPlaces(message, locale);
+        }
         if (isRouteQuestion(normalized) || isPlainChineseRouteQuestion(normalized) || looksLikeRouteWithContext(message, routeContext)) {
             return routeHelp(message, locale, routeContext);
         }
@@ -87,7 +90,11 @@ public class MockAiService {
 
     private AiChatResponse smallTalk(String normalized, String locale) {
         String reply;
-        if (containsAny(normalized, "thanks", "thankyou", "\u8c22\u8c22", "\u591a\u8c22")) {
+        if (isCampusIntroQuestion(normalized)) {
+            reply = text(locale,
+                    "\u5357\u4eac\u4fe1\u606f\u5de5\u7a0b\u5927\u5b66\uff08NUIST\uff09\u4f4d\u4e8e\u5357\u4eac\uff0c\u662f\u4e00\u6240\u4ee5\u5927\u6c14\u79d1\u5b66\u4e3a\u7279\u8272\uff0c\u6c14\u8c61\u3001\u4fe1\u606f\u3001\u73af\u5883\u7b49\u591a\u5b66\u79d1\u534f\u540c\u53d1\u5c55\u7684\u9ad8\u6821\u3002\u5728\u8fd9\u4e2a\u7cfb\u7edf\u91cc\uff0c\u6211\u8fd8\u53ef\u4ee5\u7ee7\u7eed\u5e2e\u4f60\u67e5\u6821\u56ed\u5730\u70b9\u3001\u89c4\u5212\u8def\u7ebf\u3001\u770b\u5929\u6c14\u6216\u68c0\u7d22\u53d1\u73b0 note\u3002",
+                    "Nanjing University of Information Science & Technology (NUIST) is based in Nanjing and is known for atmospheric science, with coordinated strengths across meteorology, information, environmental, and related disciplines. In this app, I can also help you find campus places, plan routes, check weather, or search discover notes.");
+        } else if (containsAny(normalized, "thanks", "thankyou", "\u8c22\u8c22", "\u591a\u8c22")) {
             reply = text(locale, "\u4e0d\u5ba2\u6c14\u3002", "You're welcome.");
         } else if (containsAny(normalized, "help", "\u5e2e\u52a9", "\u600e\u4e48\u7528")) {
             reply = text(locale,
@@ -156,6 +163,32 @@ public class MockAiService {
                 "我已按安静、自习、插座、雨天遮蔽等校园场景标签筛选候选地点，推荐结果已同步到地图。",
                 "I filtered candidate places by campus tags such as quiet study, outlets, and sheltered routes. The recommendations are synced to the map."), pois);
         response.toolCalls.add(new AiChatResponse.ToolCall("searchPoiByTags", Map.of("tags", tags)));
+        response.mapActions.add(highlight(pois));
+        if (!pois.isEmpty()) {
+            response.mapActions.add(openDetail(pois.get(0).id));
+        }
+        return response;
+    }
+
+    private AiChatResponse recommendRankedPlaces(String message, String locale) {
+        String normalized = normalizeText(message);
+        int limit = requestedLimit(normalized);
+        String category = rankedPlaceCategory(normalized);
+        List<PoiEntity> pois = poiService.list(null, null, null, true).stream()
+                .filter(poi -> matchesRankedPlaceCategory(poi, category, normalized))
+                .sorted(Comparator.comparingInt((PoiEntity poi) -> poi.mapRank == null ? 999 : poi.mapRank)
+                        .thenComparing(poi -> poi.name == null ? "" : poi.name))
+                .limit(limit)
+                .toList();
+
+        AiChatResponse response = base("recommend_place", rankedPlaceReply(locale, pois.size(), limit, category), pois);
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("sort", "mapRank");
+        arguments.put("limit", limit);
+        if (category != null) {
+            arguments.put("category", category);
+        }
+        response.toolCalls.add(new AiChatResponse.ToolCall("searchPoiByRank", arguments));
         response.mapActions.add(highlight(pois));
         if (!pois.isEmpty()) {
             response.mapActions.add(openDetail(pois.get(0).id));
@@ -392,6 +425,9 @@ public class MockAiService {
         if (normalized == null || normalized.isBlank()) {
             return true;
         }
+        if (isCampusIntroQuestion(normalized)) {
+            return true;
+        }
         if (containsAny(normalized, "hello", "hi", "hey", "thanks", "thankyou", "help", "whoareyou",
                 "\u4f60\u597d", "\u55e8", "\u54c8\u55bd", "\u8c22\u8c22", "\u591a\u8c22", "\u5e2e\u52a9", "\u600e\u4e48\u7528", "\u4f60\u662f\u8c01")) {
             return true;
@@ -401,19 +437,31 @@ public class MockAiService {
                 "\u8def\u7ebf", "\u63a8\u8350", "\u81ea\u4e60", "\u56fe\u4e66\u9986", "\u98df\u5802", "\u6253\u5370", "\u5929\u6c14");
     }
 
+    private boolean isCampusIntroQuestion(String normalized) {
+        if (normalized == null || normalized.isBlank()) {
+            return false;
+        }
+        if (containsAny(normalized,
+                "library", "canteen", "dining", "gymnasium", "building", "print", "shop", "clinic",
+                "\u56fe\u4e66\u9986", "\u98df\u5802", "\u6253\u5370", "\u4f53\u80b2\u9986", "\u6559\u5b66\u697c", "\u697c")) {
+            return false;
+        }
+        boolean asksIntro = containsAny(normalized,
+                "introduce", "intro", "about", "tellmeabout", "whatis",
+                "\u4ecb\u7ecd", "\u7b80\u4ecb", "\u4e86\u89e3", "\u662f\u4ec0\u4e48");
+        boolean campusTarget = containsAny(normalized,
+                "nuist", "smartcampus",
+                "\u5357\u4eac\u4fe1\u606f\u5de5\u7a0b\u5927\u5b66", "\u5357\u4fe1\u5927", "\u5b66\u6821", "\u6821\u56ed");
+        return asksIntro && campusTarget;
+    }
+
     private boolean isNoteQuestion(String normalized) {
         if (normalized == null || normalized.isBlank()) {
             return false;
         }
-        boolean hasNoteWord = containsAny(normalized,
+        return containsAny(normalized,
                 "note", "notes", "comment", "comments", "review", "reviews",
                 "\u7b14\u8bb0", "\u8bc4\u8bba", "\u8bc4\u4ef7", "\u7ecf\u9a8c");
-        if (!hasNoteWord) {
-            return false;
-        }
-        return containsAny(normalized,
-                "find", "show", "search", "about", "related", "place", "poi", "on",
-                "\u627e", "\u67e5", "\u770b", "\u5173\u4e8e", "\u6709\u5173", "\u5730\u70b9", "\u5730\u65b9");
     }
 
     private boolean isRouteQuestion(String normalized) {
@@ -430,7 +478,133 @@ public class MockAiService {
 
     private boolean isRecommendationQuestion(String normalized) {
         return containsAny(normalized, "推荐", "安静", "插座", "自习", "学习", "少淋雨", "淋雨", "遮蔽", "夜间", "雨天友好",
-                "recommend", "quiet", "outlet", "outlets", "study", "sheltered", "rain", "night");
+                "recommend", "quiet", "outlet", "outlets", "study", "sheltered", "rain", "night")
+                || isWhereShouldGoQuestion(normalized)
+                || isShoppingNeedQuestion(normalized);
+    }
+
+    private boolean isRankedPlaceQuestion(String normalized) {
+        boolean asksRank = containsAny(normalized,
+                "top", "popular", "hot", "rank", "ranking", "mostpopular", "hottest", "placerank",
+                "\u70ed\u95e8", "\u6700\u70ed\u95e8", "\u6392\u540d", "\u6392\u884c", "\u699c")
+                || (normalized.contains("\u524d") && (firstArabicNumber(normalized) > 0 || chineseNumberLimit(normalized) > 0));
+        boolean asksPlace = containsAny(normalized,
+                "poi", "place", "places", "restaurant", "restaurants", "dining", "canteen", "canteens",
+                "library", "study", "gym", "sports", "building", "service", "shop", "supermarket",
+                "\u5730\u70b9", "\u5730\u65b9", "\u9910\u5385", "\u98df\u5802", "\u5403\u996d", "\u996d\u5e97",
+                "\u56fe\u4e66\u9986", "\u81ea\u4e60", "\u5b66\u4e60", "\u4f53\u80b2", "\u8fd0\u52a8",
+                "\u6559\u5b66\u697c", "\u697c", "\u670d\u52a1", "\u6253\u5370", "\u5546\u5e97", "\u8d85\u5e02");
+        return asksRank && asksPlace;
+    }
+
+    private int requestedLimit(String normalized) {
+        int number = firstArabicNumber(normalized);
+        if (number <= 0) {
+            number = chineseNumberLimit(normalized);
+        }
+        if (number <= 0) {
+            number = 5;
+        }
+        return Math.min(Math.max(number, 1), 10);
+    }
+
+    private int firstArabicNumber(String normalized) {
+        int current = 0;
+        boolean seen = false;
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (Character.isDigit(ch)) {
+                seen = true;
+                current = current * 10 + Character.digit(ch, 10);
+            } else if (seen) {
+                return current;
+            }
+        }
+        return seen ? current : 0;
+    }
+
+    private int chineseNumberLimit(String normalized) {
+        Map<String, Integer> numbers = Map.ofEntries(
+                Map.entry("\u4e00", 1),
+                Map.entry("\u4e8c", 2),
+                Map.entry("\u4e24", 2),
+                Map.entry("\u4e09", 3),
+                Map.entry("\u56db", 4),
+                Map.entry("\u4e94", 5),
+                Map.entry("\u516d", 6),
+                Map.entry("\u4e03", 7),
+                Map.entry("\u516b", 8),
+                Map.entry("\u4e5d", 9),
+                Map.entry("\u5341", 10)
+        );
+        for (Map.Entry<String, Integer> entry : numbers.entrySet()) {
+            if (normalized.contains(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return 0;
+    }
+
+    private String rankedPlaceCategory(String normalized) {
+        if (containsAny(normalized, "restaurant", "restaurants", "dining", "canteen", "canteens", "food", "cafe",
+                "\u9910\u5385", "\u98df\u5802", "\u5403\u996d", "\u996d\u5e97", "\u5496\u5561")) {
+            return "DINING";
+        }
+        if (containsAny(normalized, "library", "study", "quiet", "\u56fe\u4e66\u9986", "\u81ea\u4e60", "\u5b66\u4e60")) {
+            return "STUDY";
+        }
+        if (containsAny(normalized, "gym", "sports", "basketball", "fitness", "\u4f53\u80b2", "\u8fd0\u52a8", "\u7bee\u7403")) {
+            return "SPORTS";
+        }
+        if (containsAny(normalized, "dorm", "dormitory", "\u5bbf\u820d")) {
+            return "DORM";
+        }
+        if (containsAny(normalized, "teaching", "classroom", "building", "\u6559\u5b66\u697c", "\u6559\u5ba4", "\u697c")) {
+            return "TEACHING";
+        }
+        if (containsAny(normalized, "service", "print", "shop", "supermarket", "atm", "bank",
+                "\u670d\u52a1", "\u6253\u5370", "\u5546\u5e97", "\u8d85\u5e02", "\u94f6\u884c")) {
+            return "SERVICE";
+        }
+        return null;
+    }
+
+    private boolean matchesRankedPlaceCategory(PoiEntity poi, String category, String normalized) {
+        if (category == null) {
+            return true;
+        }
+        if (category.equals(poi.category)) {
+            return true;
+        }
+        String text = normalizeText(poi.name + "," + poi.category + "," + poi.tags);
+        return switch (category) {
+            case "DINING" -> containsAny(text, "dining", "canteen", "restaurant", "food", "cafe");
+            case "STUDY" -> containsAny(text, "study", "library", "quiet");
+            case "SPORTS" -> containsAny(text, "sports", "gym", "basketball", "fitness");
+            case "DORM" -> containsAny(text, "dorm", "dormitory");
+            case "TEACHING" -> containsAny(text, "teaching", "classroom", "building");
+            case "SERVICE" -> containsAny(text, "service", "print", "shop", "supermarket", "atm", "bank");
+            default -> false;
+        };
+    }
+
+    private String rankedPlaceReply(String locale, int count, int requestedLimit, String category) {
+        if ("en-US".equals(locale)) {
+            return "I ranked campus places by Place Rank and highlighted the top " + count + ".";
+        }
+        String target = switch (category == null ? "" : category) {
+            case "DINING" -> "\u9910\u5385";
+            case "STUDY" -> "\u5b66\u4e60\u5730\u70b9";
+            case "SPORTS" -> "\u8fd0\u52a8\u5730\u70b9";
+            case "DORM" -> "\u5bbf\u820d";
+            case "TEACHING" -> "\u6559\u5b66\u697c";
+            case "SERVICE" -> "\u670d\u52a1\u5730\u70b9";
+            default -> "\u5730\u70b9";
+        };
+        if (count == 0) {
+            return "\u6682\u672a\u627e\u5230\u53ef\u6309 Place Rank \u6392\u5e8f\u7684" + target + "\u3002";
+        }
+        return "\u5df2\u6309 Place Rank \u4e3a\u4f60\u627e\u5230\u524d " + count + " \u4e2a\u70ed\u95e8" + target + "\u3002";
     }
 
     private List<String> extractPreferenceTags(String normalized) {
@@ -459,6 +633,11 @@ public class MockAiService {
         if (normalized.contains("食堂") || normalized.contains("吃饭") || normalized.contains("dining") || normalized.contains("canteen")) {
             tags.add("dining");
         }
+        if (isShoppingNeedQuestion(normalized)) {
+            tags.add("supermarket");
+            tags.add("shopping");
+            tags.add("daily-life");
+        }
         return tags;
     }
 
@@ -485,6 +664,9 @@ public class MockAiService {
             score += 2;
         }
         if (containsAny(normalized, "打印", "print") && containsAny(text, "print", "copy", "binding")) {
+            score += 2;
+        }
+        if (isShoppingNeedQuestion(normalized) && containsAny(text, "supermarket", "shopping", "daily-life")) {
             score += 2;
         }
         return score;
@@ -715,7 +897,9 @@ public class MockAiService {
     }
 
     private boolean isPlainChineseRecommendationQuestion(String normalized) {
-        return containsAny(normalized, "推荐", "安静", "插座", "自习", "学习", "少淋雨", "淋雨", "遮蔽", "夜间", "雨天友好");
+        return containsAny(normalized, "推荐", "安静", "插座", "自习", "学习", "少淋雨", "淋雨", "遮蔽", "夜间", "雨天友好")
+                || isWhereShouldGoQuestion(normalized)
+                || isShoppingNeedQuestion(normalized);
     }
 
     private void addPlainChinesePreferenceTags(List<String> tags, String normalized) {
@@ -738,6 +922,28 @@ public class MockAiService {
         if (normalized.contains("食堂") || normalized.contains("吃饭")) {
             tags.add("dining");
         }
+        if (isShoppingNeedQuestion(normalized)) {
+            tags.add("supermarket");
+            tags.add("shopping");
+            tags.add("daily-life");
+        }
+    }
+
+    private boolean isWhereShouldGoQuestion(String normalized) {
+        return containsAny(normalized,
+                "去哪里", "去哪", "到哪里", "应该去", "可以去", "适合去", "哪里可以买", "哪儿可以买",
+                "whereshouldigo", "wheretogo", "wherecanigo", "wherecanibuy", "whereshouldibuy");
+    }
+
+    private boolean isShoppingNeedQuestion(String normalized) {
+        boolean shoppingTarget = containsAny(normalized,
+                "买", "购买", "商店", "超市", "便利店", "小卖部", "购物", "日用品",
+                "方便面", "泡面", "零食", "饮料", "矿泉水",
+                "buy", "shopping", "supermarket", "store", "convenience", "snack", "drink", "noodle", "instantnoodle");
+        boolean asksForPlace = containsAny(normalized,
+                "找", "想", "要", "需要", "哪里", "哪儿", "去哪", "去哪里", "应该去",
+                "find", "need", "want", "where", "go");
+        return shoppingTarget && asksForPlace;
     }
 
     private void addPlainChineseAliasMatches(List<PoiEntity> matched, List<PoiEntity> candidates, String normalized) {

@@ -1,15 +1,14 @@
 package com.smartcampus.navigation.weather;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.smartcampus.navigation.common.BizException;
 import com.smartcampus.navigation.poi.PoiEntity;
 import com.smartcampus.navigation.poi.PoiService;
 import java.math.BigDecimal;
@@ -20,13 +19,17 @@ class WeatherServiceTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void rejectsWhenApiKeyIsMissing() {
+    void fallsBackToDemoWeatherWhenApiKeyIsMissing() {
         TestContext ctx = new TestContext();
         when(ctx.client.isConfigured()).thenReturn(false);
 
-        BizException ex = assertThrows(BizException.class, () -> ctx.service().campus(null, "zh-CN"));
+        WeatherResponse response = ctx.service().campus(null, "zh-CN");
 
-        assertEquals("QWeather API key is not configured", ex.getMessage());
+        assertEquals("Demo Weather", response.source);
+        assertEquals("NUIST Campus", response.location.name);
+        assertEquals(24, response.hourly.size());
+        assertEquals(7, response.daily.size());
+        verify(ctx.client, never()).fetchNow("118.71,32.20", "zh");
     }
 
     @Test

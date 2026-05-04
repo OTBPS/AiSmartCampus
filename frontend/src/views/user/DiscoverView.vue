@@ -24,6 +24,9 @@
         @click="openPost(post)"
         @keydown.enter.prevent="openPost(post)"
       >
+        <div v-if="postCover(post)" class="note-card-image">
+          <img :src="postCover(post)" :alt="post.title" />
+        </div>
         <div class="note-card-top">
           <el-tag size="small" effect="plain">{{ post.category }}</el-tag>
           <span>{{ formatTime(post.createdAt) }}</span>
@@ -131,6 +134,10 @@ async function toggleFavorite(post) {
 function syncPost(updated) {
   const index = posts.value.findIndex((item) => item.id === updated.id)
   if (index >= 0) posts.value[index] = { ...posts.value[index], ...updated }
+}
+
+function postCover(post) {
+  return post.images?.[0]?.imageUrl || post.coverUrl || ''
 }
 
 function formatTime(value) {

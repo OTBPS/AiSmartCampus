@@ -43,7 +43,7 @@
 
 <script setup>
 import { nextTick, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { authApi } from '../api/modules'
@@ -52,6 +52,7 @@ import LocaleSwitch from '../components/LocaleSwitch.vue'
 import nuistBadge from '../assets/login/NUIST_badge2.png'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const { t } = useI18n()
 const mode = ref('login')
@@ -100,11 +101,17 @@ async function submit() {
       ? await authApi.login({ username: form.username, password: form.password })
       : await authApi.register({ username: form.username, password: form.password })
     auth.setSession(data)
-    router.push(data.role === 'ADMIN' ? '/admin/dashboard' : '/map-chat')
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    const fallback = data.role === 'ADMIN' ? '/admin/dashboard' : '/map-chat'
+    router.push(isSafeRedirect(redirect) ? redirect : fallback)
   } catch (error) {
     ElMessage.error(error.message)
   } finally {
     loading.value = false
   }
+}
+
+function isSafeRedirect(value) {
+  return value.startsWith('/') && !value.startsWith('//')
 }
 </script>

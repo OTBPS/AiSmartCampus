@@ -8,12 +8,16 @@ import com.smartcampus.navigation.discover.DiscoverService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
 public class AiChatService {
+    private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
+
     private final MockAiService mockAiService;
     private final DeepSeekAiService deepSeekAiService;
     private final AiMessageMapper aiMessageMapper;
@@ -77,15 +81,29 @@ public class AiChatService {
         AiChatResponse response;
         if ("deepseek".equalsIgnoreCase(provider) && deepSeekAiService.isConfigured()) {
             AiChatResponse ruleResponse = mockPreview(message, locale, routeContext);
-            try {
-                response = deepSeekChat(message, locale, routeContext);
-                if (needsFallback(response) || !matchesRuleIntent(ruleResponse, response)) {
+            if (isRankedPlaceRule(ruleResponse)) {
+                response = ruleResponse;
+            } else {
+                boolean shortChat = shouldUseDeepSeekShortChat(ruleResponse, message);
+                try {
+                    response = shortChat
+                            ? deepSeekSmallTalk(message, locale)
+                            : deepSeekChat(message, locale, routeContext);
+                    if (needsFallback(response) || !matchesRuleIntent(ruleResponse, response)) {
+                        log.warn("DeepSeek response fell back to local rule. shortChat={}, ruleIntent={}, deepSeekIntent={}",
+                                shortChat, intentOf(ruleResponse), intentOf(response));
+                        response = ruleResponse;
+                    }
+                } catch (RuntimeException ex) {
+                    log.warn("DeepSeek request failed, falling back to local rule. shortChat={}, ruleIntent={}, error={}",
+                            shortChat, intentOf(ruleResponse), ex.toString());
                     response = ruleResponse;
                 }
-            } catch (RuntimeException ex) {
-                response = ruleResponse;
             }
         } else {
+            if ("deepseek".equalsIgnoreCase(provider)) {
+                log.warn("AI_PROVIDER=deepseek but DeepSeek API key is not configured; using local mock AI.");
+            }
             response = mockPreview(message, locale, routeContext);
         }
         response = enrichNoteSearch(response, userId, message, locale);
@@ -98,17 +116,44 @@ public class AiChatService {
                 : mockAiService.preview(message, locale, routeContext);
     }
 
+    private AiChatResponse deepSeekSmallTalk(String message, String locale) {
+        return deepSeekAiService.smallTalk(message, locale);
+    }
+
     private AiChatResponse deepSeekChat(String message, String locale, AiChatRequest.RouteContext routeContext) {
         return routeContext == null
                 ? deepSeekAiService.chat(message, locale)
                 : deepSeekAiService.chat(message, locale, routeContext);
     }
 
+    private boolean shouldUseDeepSeekShortChat(AiChatResponse ruleResponse, String message) {
+        if (ruleResponse == null) {
+            return false;
+        }
+        if ("small_talk".equals(ruleResponse.intent)) {
+            return true;
+        }
+        return isNoResultFindPoi(ruleResponse) && !looksLikePlaceRecommendationQuestion(message);
+    }
+
+    private boolean isRankedPlaceRule(AiChatResponse response) {
+        return response != null
+                && response.toolCalls != null
+                && response.toolCalls.stream().anyMatch(call -> "searchPoiByRank".equals(call.tool));
+    }
+
+    private boolean isNoResultFindPoi(AiChatResponse response) {
+        return response != null && "find_poi".equals(response.intent) && hasNoPois(response);
+    }
+
     private boolean needsFallback(AiChatResponse response) {
-        return response == null
-                || "unknown".equals(response.intent)
-                || response.mapActions == null
-                || response.mapActions.isEmpty();
+        if (response == null || "unknown".equals(response.intent)) {
+            return true;
+        }
+        if ("small_talk".equals(response.intent) || "find_note".equals(response.intent)) {
+            return false;
+        }
+        return response.mapActions == null || response.mapActions.isEmpty();
     }
 
     private boolean matchesRuleIntent(AiChatResponse ruleResponse, AiChatResponse response) {
@@ -124,7 +169,45 @@ public class AiChatService {
         if ("find_note".equals(ruleResponse.intent)) {
             return ruleResponse.intent.equals(response.intent);
         }
+        if ("find_poi".equals(ruleResponse.intent)) {
+            if ("find_poi".equals(response.intent)) {
+                return true;
+            }
+            if ("recommend_place".equals(response.intent) && hasNoPois(ruleResponse) && !hasNoPois(response)) {
+                return true;
+            }
+            return "small_talk".equals(response.intent) && hasNoPois(ruleResponse);
+        }
         return true;
+    }
+
+    private boolean looksLikePlaceRecommendationQuestion(String message) {
+        String normalized = message == null ? "" : message.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+        boolean asksPlace = containsAny(normalized,
+                "去哪里", "去哪", "到哪里", "应该去", "可以去", "适合去", "哪里可以买", "哪儿可以买",
+                "whereshouldigo", "wheretogo", "wherecanigo", "wherecanibuy", "whereshouldibuy");
+        boolean shoppingNeed = containsAny(normalized,
+                "买", "购买", "商店", "超市", "便利店", "小卖部", "购物", "日用品",
+                "方便面", "泡面", "零食", "饮料", "矿泉水",
+                "buy", "shopping", "supermarket", "store", "convenience", "snack", "drink", "noodle", "instantnoodle");
+        return asksPlace || shoppingNeed;
+    }
+
+    private boolean containsAny(String text, String... candidates) {
+        for (String candidate : candidates) {
+            if (text.contains(candidate.toLowerCase(Locale.ROOT).replaceAll("\\s+", ""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasNoPois(AiChatResponse response) {
+        return response == null || response.pois == null || response.pois.isEmpty();
+    }
+
+    private String intentOf(AiChatResponse response) {
+        return response == null ? "null" : response.intent;
     }
 
     private AiChatResponse enrichNoteSearch(AiChatResponse response, Long userId, String message, String locale) {

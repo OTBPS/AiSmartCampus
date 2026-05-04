@@ -19,6 +19,7 @@ public class DiscoverPostResponse {
     public String poiTags;
     public String category;
     public String coverUrl;
+    public List<DiscoverPostImageResponse> images = new ArrayList<>();
     public String status;
     public Integer rating;
     public long likeCount;

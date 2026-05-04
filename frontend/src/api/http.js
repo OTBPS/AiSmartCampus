@@ -27,5 +27,26 @@ http.interceptors.response.use(
     }
     return body?.data ?? body
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    const status = error.response?.status
+    const url = error.config?.url || ''
+    const isAuthEndpoint = url.startsWith('/auth')
+
+    if (status === 401 && !isAuthEndpoint) {
+      const auth = useAuthStore()
+      auth.logout()
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+        window.location.assign(`/login?redirect=${encodeURIComponent(currentPath)}`)
+      }
+      return Promise.reject(new Error('登录已过期，请重新登录'))
+    }
+
+    if (status === 403) {
+      return Promise.reject(new Error('没有权限执行该操作'))
+    }
+
+    const message = error.response?.data?.message || error.message || 'Request failed'
+    return Promise.reject(new Error(message))
+  }
 )

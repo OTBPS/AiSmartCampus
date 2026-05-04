@@ -37,6 +37,20 @@ class MockAiServiceTest {
     }
 
     @Test
+    void campusIntroQuestionReturnsSmallTalkInsteadOfPoiSearch() {
+        AiChatResponse response = service(mock(PoiService.class)).preview(
+                "\u4ecb\u7ecd\u4e00\u4e0b\u5357\u4eac\u4fe1\u606f\u5de5\u7a0b\u5927\u5b66",
+                "zh-CN"
+        );
+
+        assertEquals("small_talk", response.intent);
+        assertTrue(response.reply.contains("NUIST"));
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
     void chineseNoteQuestionReturnsFindNoteIntent() {
         AiChatResponse response = service(mock(PoiService.class)).preview("\u6211\u60f3\u627e\u4e00\u4e0b\u5173\u4e8e\u56fe\u4e66\u9986\u7684\u7b14\u8bb0", "zh-CN");
 
@@ -49,6 +63,26 @@ class MockAiServiceTest {
     @Test
     void englishNoteQuestionReturnsFindNoteIntent() {
         AiChatResponse response = service(mock(PoiService.class)).preview("show notes about library", "en-US");
+
+        assertEquals("find_note", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
+    void terseNoteQuestionReturnsFindNoteIntent() {
+        AiChatResponse response = service(mock(PoiService.class)).preview("notes", "en-US");
+
+        assertEquals("find_note", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
+    void chinesePlaceNoteQuestionWithoutSearchVerbReturnsFindNoteIntent() {
+        AiChatResponse response = service(mock(PoiService.class)).preview("\u56fe\u4e66\u9986\u76f8\u5173note", "zh-CN");
 
         assertEquals("find_note", response.intent);
         assertTrue(response.pois.isEmpty());
@@ -74,6 +108,43 @@ class MockAiServiceTest {
         assertEquals("recommend_place", response.intent);
         assertEquals(List.of(study), response.pois);
         assertEquals(List.of(1L), response.mapActions.get(0).poiIds);
+    }
+
+    @Test
+    void chineseShoppingNeedRecommendsSupermarkets() {
+        PoiEntity central = poi(73L, "Campus Supermarket Central", "SERVICE", "supermarket,shopping,service,daily-life", true);
+        PoiEntity xiyuan = poi(74L, "Xiyuan Supermarket", "SERVICE", "supermarket,shopping,xiyuan,west-garden,service", true);
+        PoiEntity printer = poi(15L, "Campus Print Shop", "SERVICE", "print,copy,service", true);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(central, xiyuan, printer));
+
+        AiChatResponse response = service(poiService).preview("\u6211\u60f3\u4e70\u4e00\u4e9b\u65b9\u4fbf\u9762,\u6211\u5e94\u8be5\u53bb\u54ea\u91cc", "zh-CN");
+
+        assertEquals("recommend_place", response.intent);
+        assertEquals(List.of(central, xiyuan), response.pois);
+        assertEquals(List.of(73L, 74L), response.mapActions.get(0).poiIds);
+        assertEquals(73L, response.mapActions.get(1).poiId);
+    }
+
+    @Test
+    void rankedDiningQueryUsesMapRankAndRequestedLimit() {
+        PoiEntity service = poi(15L, "Campus Print Shop", "SERVICE", "print,copy,service,top20", true, 1);
+        PoiEntity oldCanteen = poi(9L, "Zhongyuan Old Canteen", "DINING", "canteen,dining,top20", true, 9);
+        PoiEntity central = poi(10L, "Central Campus New Canteen", "DINING", "canteen,dining,top20", true, 10);
+        PoiEntity xiyuan = poi(11L, "Xiyuan New Canteen", "DINING", "canteen,dining,top20", true, 11);
+        PoiEntity eastern = poi(12L, "Eastern Campus Canteen", "DINING", "canteen,dining,top20", true, 12);
+        PoiEntity cafe = poi(69L, "Campus Cafe", "DINING", "cafe,dining", true, null);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true)))
+                .thenReturn(List.of(service, cafe, xiyuan, central, eastern, oldCanteen));
+
+        AiChatResponse response = service(poiService).preview("\u6211\u60f3\u627e\u6700\u70ed\u95e8\u76845\u4e2a\u9910\u5385", "zh-CN");
+
+        assertEquals("recommend_place", response.intent);
+        assertEquals(List.of(oldCanteen, central, xiyuan, eastern, cafe), response.pois);
+        assertEquals(List.of(9L, 10L, 11L, 12L, 69L), response.mapActions.get(0).poiIds);
+        assertEquals(9L, response.mapActions.get(1).poiId);
+        assertEquals("searchPoiByRank", response.toolCalls.get(0).tool);
     }
 
     @Test
@@ -278,6 +349,12 @@ class MockAiServiceTest {
         poi.sheltered = sheltered;
         poi.remark = "";
         poi.enabled = true;
+        return poi;
+    }
+
+    private PoiEntity poi(Long id, String name, String category, String tags, boolean sheltered, Integer mapRank) {
+        PoiEntity poi = poi(id, name, category, tags, sheltered);
+        poi.mapRank = mapRank;
         return poi;
     }
 }

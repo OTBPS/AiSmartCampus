@@ -46,10 +46,19 @@ public class DeepSeekAiService {
     ) {
         this.poiService = poiService;
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
+        this.apiKey = normalizeApiKey(apiKey);
         this.baseUrl = baseUrl;
         this.model = model;
         this.timeoutSeconds = timeoutSeconds;
+    }
+
+    static String normalizeApiKey(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        String trimmed = value.trim();
+        int keyStart = trimmed.indexOf("sk-");
+        return keyStart > 0 ? trimmed.substring(keyStart).trim() : trimmed;
     }
 
     public boolean isConfigured() {
@@ -73,6 +82,20 @@ public class DeepSeekAiService {
             throw new IllegalStateException("empty_deepseek_response");
         }
         return parseStructuredResponse(content, locale, pois);
+    }
+
+    public AiChatResponse smallTalk(String message, String locale) {
+        JsonNode result = client().post()
+                .uri("/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(smallTalkRequestBody(message, locale))
+                .retrieve()
+                .body(JsonNode.class);
+        String content = result == null ? "" : result.path("choices").path(0).path("message").path("content").asText("");
+        if (!StringUtils.hasText(content)) {
+            throw new IllegalStateException("empty_deepseek_response");
+        }
+        return parseSmallTalkResponse(content, locale);
     }
 
     private RestClient client() {
@@ -99,6 +122,26 @@ public class DeepSeekAiService {
         );
     }
 
+    private Map<String, Object> smallTalkRequestBody(String message, String locale) {
+        String language = "en-US".equals(locale) ? "English" : "Chinese";
+        return Map.of(
+                "model", model,
+                "messages", List.of(
+                        Map.of("role", "system", "content",
+                                "You are SmartCampusNavigation's campus chat assistant. Reply in " + language + ". "
+                                        + "Return only valid JSON with schema {\"intent\":\"small_talk\",\"reply\":\"text\"}. "
+                                        + "Answer general campus questions directly, including NUIST facts, nearby transit, app capability questions, greetings, and thanks. "
+                                        + "Do not plan map actions, do not search POIs, and do not include poiIds, toolCalls, or mapActions. "
+                                        + "Keep reply within 100 characters. If unsure, say so briefly."),
+                        Map.of("role", "user", "content", message == null ? "" : message)
+                ),
+                "response_format", Map.of("type", "json_object"),
+                "temperature", 0.3,
+                "max_tokens", 160,
+                "stream", false
+        );
+    }
+
     private String systemPrompt(String locale, List<PoiEntity> pois) {
         String language = "en-US".equals(locale) ? "English" : "Chinese";
         StringBuilder builder = new StringBuilder();
@@ -110,7 +153,7 @@ public class DeepSeekAiService {
         builder.append("{\"intent\":\"find_poi|recommend_place|route_help|find_note|small_talk|unknown\",");
         builder.append("\"reply\":\"short user-facing message\",");
         builder.append("\"poiIds\":[1,2],");
-        builder.append("\"toolCalls\":[{\"tool\":\"searchPoi|searchPoiByTags|planCampusRouteFallback\",\"arguments\":{}}],");
+        builder.append("\"toolCalls\":[{\"tool\":\"searchPoi|searchPoiByTags|searchPoiByRank|planCampusRouteFallback\",\"arguments\":{}}],");
         builder.append("\"mapActions\":[{\"type\":\"highlight_pois\",\"poiIds\":[1]},");
         builder.append("{\"type\":\"open_poi_detail\",\"poiId\":1},");
         builder.append("{\"type\":\"draw_route\",\"poiIds\":[1,2],\"routeMode\":\"AMAP_FALLBACK\",");
@@ -118,6 +161,8 @@ public class DeepSeekAiService {
         builder.append(" For greetings, thanks, capability questions, or other small talk, use intent small_talk, reply briefly, and return empty poiIds, toolCalls, and mapActions. ");
         builder.append(" For requests about campus notes, comments, reviews, or discover posts for a place, use intent find_note, reply briefly, and return empty poiIds, toolCalls, and mapActions. ");
         builder.append(" For route questions, return draw_route.poiIds in route order: origin, waypoints, destination. ");
+        builder.append("For popular, hottest, top N, ranking, Place Rank, or map rank requests, use intent recommend_place, choose matching POIs sorted by mapRank ascending where a smaller non-null mapRank is more popular, and return at most the requested N. ");
+        builder.append("For user needs like buying snacks, instant noodles, drinks, daily supplies, shopping, supermarket, store, or asking where to go for them, use intent recommend_place and choose supermarket or shopping POIs. ");
         builder.append("If map route context is supplied, use text-mentioned origin/destination first, fill missing route endpoints from context, keep context waypoint order, append extra text waypoints, and de-duplicate. ");
         builder.append("For draw_route payload, include from, to, via as an array of waypoint names, reason, and source as text|map_context|mixed. ");
         builder.append("Campus POIs:\n");
@@ -127,6 +172,7 @@ public class DeepSeekAiService {
                     .append(", category=").append(poi.category)
                     .append(", location=").append(nullToEmpty(poi.locationText))
                     .append(", status=").append(nullToEmpty(poi.openStatus))
+                    .append(", mapRank=").append(poi.mapRank == null ? "" : poi.mapRank)
                     .append(", tags=").append(nullToEmpty(poi.tags))
                     .append(", sheltered=").append(Boolean.TRUE.equals(poi.sheltered))
                     .append(", remark=").append(nullToEmpty(poi.remark))
@@ -180,6 +226,31 @@ public class DeepSeekAiService {
             if (!StringUtils.hasText(response.reply)) {
                 response.reply = defaultReply(locale);
             }
+            response.reply = limitSmallTalkReply(response.intent, response.reply);
+            if ("small_talk".equals(response.intent)) {
+                response.pois = List.of();
+                response.toolCalls.clear();
+                response.mapActions.clear();
+            }
+            return response;
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("invalid_deepseek_json", ex);
+        }
+    }
+
+    AiChatResponse parseSmallTalkResponse(String content, String locale) {
+        try {
+            JsonNode root = objectMapper.readTree(stripCodeFence(content));
+            AiChatResponse response = new AiChatResponse();
+            response.intent = "small_talk";
+            String reply = root.path("reply").asText("");
+            if (!StringUtils.hasText(reply)) {
+                reply = root.path("answer").asText(defaultSmallTalkReply(locale));
+            }
+            response.reply = limitText(reply, 100);
+            response.pois = List.of();
+            response.toolCalls.clear();
+            response.mapActions.clear();
             return response;
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("invalid_deepseek_json", ex);
@@ -284,6 +355,30 @@ public class DeepSeekAiService {
 
     private String defaultReply(String locale) {
         return "en-US".equals(locale) ? "I found matching campus map actions." : "已生成对应的校园地图动作。";
+    }
+
+    private String defaultSmallTalkReply(String locale) {
+        return "en-US".equals(locale)
+                ? "I can answer campus questions briefly."
+                : "\u6211\u53ef\u4ee5\u7b80\u8981\u56de\u7b54\u6821\u56ed\u76f8\u5173\u95ee\u9898\u3002";
+    }
+
+    private String limitSmallTalkReply(String intent, String reply) {
+        return "small_talk".equals(intent) ? limitText(reply, 100) : reply;
+    }
+
+    private String limitText(String text, int maxCodePoints) {
+        if (text == null) {
+            return "";
+        }
+        if (text.codePointCount(0, text.length()) <= maxCodePoints) {
+            return text;
+        }
+        return text.codePoints()
+                .limit(maxCodePoints)
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString()
+                .trim();
     }
 
     private String normalizeReplyLanguage(String reply, String intent, String locale, List<PoiEntity> pois) {

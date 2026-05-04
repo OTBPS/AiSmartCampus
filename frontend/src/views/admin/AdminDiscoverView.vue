@@ -10,6 +10,15 @@
     <section class="table-panel">
       <el-table :data="posts" height="620">
         <el-table-column prop="title" :label="$t('common.title')" min-width="220" />
+        <el-table-column :label="localText('images')" width="110">
+          <template #default="{ row }">
+            <div v-if="postCover(row)" class="admin-note-image">
+              <img :src="postCover(row)" :alt="row.title" />
+              <span>{{ row.images?.length || 1 }}</span>
+            </div>
+            <span v-else class="admin-note-no-image">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="authorName" :label="localText('author')" width="130" />
         <el-table-column prop="poiName" :label="$t('admin.relatedPoi')" min-width="180" />
         <el-table-column :label="localText('stats')" width="150">
@@ -71,9 +80,14 @@ function discoverStatusLabel(status) {
   }[status] || status
 }
 
+function postCover(post) {
+  return post.images?.[0]?.imageUrl || post.coverUrl || ''
+}
+
 function localText(key) {
   const zh = {
     author: '作者',
+    images: '图片',
     stats: '喜欢/收藏/评论',
     view: '查看',
     delete: '删除',
@@ -83,6 +97,7 @@ function localText(key) {
   }
   const en = {
     author: 'Author',
+    images: 'Images',
     stats: 'Likes/Saves/Comments',
     view: 'View',
     delete: 'Delete',

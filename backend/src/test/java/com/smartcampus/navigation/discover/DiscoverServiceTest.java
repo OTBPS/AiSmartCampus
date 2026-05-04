@@ -1,8 +1,10 @@
 package com.smartcampus.navigation.discover;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -15,10 +17,15 @@ import com.smartcampus.navigation.poi.PoiEntity;
 import com.smartcampus.navigation.poi.PoiMapper;
 import com.smartcampus.navigation.user.UserEntity;
 import com.smartcampus.navigation.user.UserMapper;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockMultipartFile;
 
 class DiscoverServiceTest {
     @Test
@@ -179,6 +186,111 @@ class DiscoverServiceTest {
         verify(ctx.commentMapper, never()).deleteById(5L);
     }
 
+    @Test
+    void uploadImagesStoresThreeImagesAndRejectsFourth(@TempDir Path tempDir) throws Exception {
+        TestContext ctx = new TestContext();
+        DiscoverPostEntity existing = post(3L, 7L);
+        when(ctx.postMapper.selectById(3L)).thenReturn(existing);
+        ctx.stubCounts();
+        List<DiscoverPostImageEntity> stored = new ArrayList<>();
+        when(ctx.imageMapper.selectList(any())).thenAnswer(invocation -> List.copyOf(stored));
+        when(ctx.imageMapper.insert(any(DiscoverPostImageEntity.class))).thenAnswer(invocation -> {
+            DiscoverPostImageEntity image = invocation.getArgument(0);
+            image.id = (long) stored.size() + 1;
+            stored.add(image);
+            return 1;
+        });
+
+        DiscoverService service = ctx.service(tempDir.resolve("uploads").resolve("discover").toString());
+        DiscoverPostResponse response = service.uploadImages(3L, 7L, List.of(
+                image("first.png"),
+                image("second.jpg"),
+                image("third.webp")
+        ));
+
+        assertEquals(3, response.images.size());
+        assertEquals(response.images.get(0).imageUrl, response.coverUrl);
+        try (var files = Files.list(tempDir.resolve("uploads").resolve("discover"))) {
+            assertEquals(3, files.count());
+        }
+
+        BizException ex = assertThrows(BizException.class, () -> service.uploadImages(3L, 7L, List.of(image("fourth.png"))));
+
+        assertEquals("Each note can have at most 3 images", ex.getMessage());
+    }
+
+    @Test
+    void uploadImagesRejectsNonImageFile(@TempDir Path tempDir) {
+        TestContext ctx = new TestContext();
+        when(ctx.postMapper.selectById(3L)).thenReturn(post(3L, 7L));
+        when(ctx.imageMapper.selectList(any())).thenReturn(List.of());
+        MockMultipartFile file = new MockMultipartFile("images", "note.txt", "text/plain", "bad".getBytes());
+
+        BizException ex = assertThrows(
+                BizException.class,
+                () -> ctx.service(tempDir.resolve("uploads").resolve("discover").toString()).uploadImages(3L, 7L, List.of(file))
+        );
+
+        assertEquals("Note images only support JPG, PNG, WEBP, or GIF", ex.getMessage());
+        verify(ctx.imageMapper, never()).insert(any(DiscoverPostImageEntity.class));
+    }
+
+    @Test
+    void uploadImagesRejectsNonOwner(@TempDir Path tempDir) {
+        TestContext ctx = new TestContext();
+        when(ctx.postMapper.selectById(3L)).thenReturn(post(3L, 8L));
+
+        BizException ex = assertThrows(
+                BizException.class,
+                () -> ctx.service(tempDir.resolve("uploads").resolve("discover").toString()).uploadImages(3L, 7L, List.of(image("first.png")))
+        );
+
+        assertEquals("Only the note owner can change it", ex.getMessage());
+        verify(ctx.imageMapper, never()).insert(any(DiscoverPostImageEntity.class));
+    }
+
+    @Test
+    void deleteImageRejectsNonOwnerAndDeletesOwnedImage(@TempDir Path tempDir) throws Exception {
+        Path uploadDir = tempDir.resolve("uploads").resolve("discover");
+        Files.createDirectories(uploadDir);
+        Files.writeString(uploadDir.resolve("old.png"), "old");
+
+        TestContext ctx = new TestContext();
+        when(ctx.postMapper.selectById(3L)).thenReturn(post(3L, 8L), post(3L, 7L), post(3L, 7L));
+        DiscoverPostImageEntity image = postImage(20L, 3L, "/uploads/discover/old.png");
+        when(ctx.imageMapper.selectById(20L)).thenReturn(image);
+        when(ctx.imageMapper.selectList(any())).thenReturn(List.of(image), List.of());
+        ctx.stubCounts();
+
+        BizException ex = assertThrows(
+                BizException.class,
+                () -> ctx.service(uploadDir.toString()).deleteImage(3L, 20L, 7L)
+        );
+        assertEquals("Only the note owner can change it", ex.getMessage());
+
+        DiscoverPostResponse response = ctx.service(uploadDir.toString()).deleteImage(3L, 20L, 7L);
+
+        assertTrue(response.images.isEmpty());
+        assertFalse(Files.exists(uploadDir.resolve("old.png")));
+        verify(ctx.imageMapper).deleteById(20L);
+    }
+
+    @Test
+    void deletePostGraphRemovesImagesAndLocalFiles(@TempDir Path tempDir) throws Exception {
+        Path uploadDir = tempDir.resolve("uploads").resolve("discover");
+        Files.createDirectories(uploadDir);
+        Files.writeString(uploadDir.resolve("old.png"), "old");
+        TestContext ctx = new TestContext();
+        when(ctx.postMapper.selectById(3L)).thenReturn(post(3L, 8L));
+        when(ctx.imageMapper.selectList(any())).thenReturn(List.of(postImage(20L, 3L, "/uploads/discover/old.png")));
+
+        ctx.service(uploadDir.toString()).adminDelete(3L);
+
+        verify(ctx.imageMapper).delete(any());
+        verify(ctx.postMapper).deleteById(3L);
+        assertFalse(Files.exists(uploadDir.resolve("old.png")));
+    }
+
     private DiscoverPostRequest request() {
         DiscoverPostRequest request = new DiscoverPostRequest();
         request.title = "Library note";
@@ -204,8 +316,23 @@ class DiscoverServiceTest {
         return post;
     }
 
+    private MockMultipartFile image(String filename) {
+        String contentType = filename.endsWith(".webp") ? "image/webp" : filename.endsWith(".jpg") ? "image/jpeg" : "image/png";
+        return new MockMultipartFile("images", filename, contentType, new byte[] {1, 2, 3});
+    }
+
+    private DiscoverPostImageEntity postImage(Long id, Long postId, String imageUrl) {
+        DiscoverPostImageEntity image = new DiscoverPostImageEntity();
+        image.id = id;
+        image.postId = postId;
+        image.imageUrl = imageUrl;
+        image.sortOrder = 1;
+        return image;
+    }
+
     private static class TestContext {
         final DiscoverPostMapper postMapper = mock(DiscoverPostMapper.class);
+        final DiscoverPostImageMapper imageMapper = mock(DiscoverPostImageMapper.class);
         final DiscoverCommentMapper commentMapper = mock(DiscoverCommentMapper.class);
         final DiscoverLikeMapper likeMapper = mock(DiscoverLikeMapper.class);
         final DiscoverFavoriteMapper favoriteMapper = mock(DiscoverFavoriteMapper.class);
@@ -221,10 +348,15 @@ class DiscoverServiceTest {
             user.username = "student";
             user.displayName = "Student User";
             when(userMapper.selectById(any())).thenReturn(user);
+            when(imageMapper.selectList(any())).thenReturn(List.of());
         }
 
         DiscoverService service() {
-            return new DiscoverService(postMapper, commentMapper, likeMapper, favoriteMapper, poiMapper, userMapper);
+            return service("uploads/discover");
+        }
+
+        DiscoverService service(String uploadDir) {
+            return new DiscoverService(postMapper, imageMapper, commentMapper, likeMapper, favoriteMapper, poiMapper, userMapper, uploadDir);
         }
 
         void stubCounts() {
@@ -234,6 +366,7 @@ class DiscoverServiceTest {
             when(favoriteMapper.selectOne(any())).thenReturn(null);
             when(likeMapper.selectOne(any())).thenReturn(null);
             when(commentMapper.selectList(any())).thenReturn(List.of());
+            when(imageMapper.selectList(any())).thenReturn(List.of());
         }
     }
 

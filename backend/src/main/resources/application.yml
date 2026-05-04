@@ -2,8 +2,14 @@ server:
   port: ${SERVER_PORT:8000}
 
 spring:
+  config:
+    import: optional:file:./application-local.yml
   application:
     name: smart-campus-navigation
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 16MB
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/smart_campus_navigation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
@@ -32,3 +38,7 @@ app:
       api-key: ${QWEATHER_API_KEY:}
       base-url: ${QWEATHER_BASE_URL:https://nc2pg7kpbt.re.qweatherapi.com}
       timeout-seconds: ${QWEATHER_TIMEOUT_SECONDS:8}
+  upload:
+    root-dir: ${UPLOAD_ROOT_DIR:uploads}
+    poi-dir: ${POI_UPLOAD_DIR:uploads/poi}
+    discover-dir: ${DISCOVER_UPLOAD_DIR:uploads/discover}

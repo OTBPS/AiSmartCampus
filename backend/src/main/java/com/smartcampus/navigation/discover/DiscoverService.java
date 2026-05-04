@@ -6,6 +6,11 @@ import com.smartcampus.navigation.poi.PoiEntity;
 import com.smartcampus.navigation.poi.PoiMapper;
 import com.smartcampus.navigation.user.UserEntity;
 import com.smartcampus.navigation.user.UserMapper;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -14,20 +19,34 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class DiscoverService {
     private static final int SUMMARY_LENGTH = 180;
+    private static final int MAX_IMAGES_PER_POST = 3;
+    private static final long MAX_IMAGE_BYTES = 5L * 1024 * 1024;
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+    );
 
     private final DiscoverPostMapper postMapper;
+    private final DiscoverPostImageMapper imageMapper;
     private final DiscoverCommentMapper commentMapper;
     private final DiscoverLikeMapper likeMapper;
     private final DiscoverFavoriteMapper favoriteMapper;
     private final PoiMapper poiMapper;
     private final UserMapper userMapper;
+    private final String uploadDir;
 
     public DiscoverService(
             DiscoverPostMapper postMapper,
@@ -37,12 +56,28 @@ public class DiscoverService {
             PoiMapper poiMapper,
             UserMapper userMapper
     ) {
+        this(postMapper, null, commentMapper, likeMapper, favoriteMapper, poiMapper, userMapper, "uploads/discover");
+    }
+
+    @Autowired
+    public DiscoverService(
+            DiscoverPostMapper postMapper,
+            DiscoverPostImageMapper imageMapper,
+            DiscoverCommentMapper commentMapper,
+            DiscoverLikeMapper likeMapper,
+            DiscoverFavoriteMapper favoriteMapper,
+            PoiMapper poiMapper,
+            UserMapper userMapper,
+            @Value("${app.upload.discover-dir:uploads/discover}") String uploadDir
+    ) {
         this.postMapper = postMapper;
+        this.imageMapper = imageMapper;
         this.commentMapper = commentMapper;
         this.likeMapper = likeMapper;
         this.favoriteMapper = favoriteMapper;
         this.poiMapper = poiMapper;
         this.userMapper = userMapper;
+        this.uploadDir = uploadDir;
     }
 
     public List<DiscoverPostResponse> listPublished(String sort, Long userId) {
@@ -138,6 +173,61 @@ public class DiscoverService {
         entity.updatedAt = LocalDateTime.now();
         postMapper.updateById(entity);
         return toResponse(postMapper.selectById(id), userId, true);
+    }
+
+    @Transactional
+    public DiscoverPostResponse uploadImages(Long postId, Long userId, List<MultipartFile> images) {
+        DiscoverPostEntity post = getPost(postId);
+        assertOwner(post, userId);
+        if (imageMapper == null) {
+            throw new BizException("Discover image storage is not available");
+        }
+        List<MultipartFile> uploadImages = images == null ? List.of() : images.stream()
+                .filter(Objects::nonNull)
+                .toList();
+        if (uploadImages.isEmpty()) {
+            throw new BizException("Please select images to upload");
+        }
+        List<DiscoverPostImageEntity> existing = postImages(postId);
+        if (existing.size() + uploadImages.size() > MAX_IMAGES_PER_POST) {
+            throw new BizException("Each note can have at most 3 images");
+        }
+        int nextSortOrder = existing.stream()
+                .map(image -> image.sortOrder == null ? 0 : image.sortOrder)
+                .max(Integer::compareTo)
+                .orElse(0) + 1;
+        List<String> storedUrls = new ArrayList<>();
+        try {
+            for (MultipartFile image : uploadImages) {
+                String imageUrl = storeDiscoverImage(postId, image);
+                storedUrls.add(imageUrl);
+                DiscoverPostImageEntity entity = new DiscoverPostImageEntity();
+                entity.postId = postId;
+                entity.imageUrl = imageUrl;
+                entity.sortOrder = nextSortOrder++;
+                imageMapper.insert(entity);
+            }
+        } catch (RuntimeException ex) {
+            storedUrls.forEach(this::deleteLocalImageIfManaged);
+            throw ex;
+        }
+        return toResponse(postMapper.selectById(postId), userId, true);
+    }
+
+    @Transactional
+    public DiscoverPostResponse deleteImage(Long postId, Long imageId, Long userId) {
+        DiscoverPostEntity post = getPost(postId);
+        assertOwner(post, userId);
+        if (imageMapper == null) {
+            throw new BizException("Discover image storage is not available");
+        }
+        DiscoverPostImageEntity image = imageMapper.selectById(imageId);
+        if (image == null || !Objects.equals(image.postId, postId)) {
+            throw new BizException("Discover note image not found");
+        }
+        imageMapper.deleteById(imageId);
+        deleteLocalImageIfManaged(image.imageUrl);
+        return toResponse(postMapper.selectById(postId), userId, true);
     }
 
     @Transactional
@@ -259,6 +349,11 @@ public class DiscoverService {
     }
 
     private void deletePostGraph(Long postId) {
+        List<DiscoverPostImageEntity> images = postImages(postId);
+        if (imageMapper != null) {
+            imageMapper.delete(new QueryWrapper<DiscoverPostImageEntity>().eq("post_id", postId));
+        }
+        images.forEach(image -> deleteLocalImageIfManaged(image.imageUrl));
         commentMapper.delete(new QueryWrapper<DiscoverCommentEntity>().eq("post_id", postId));
         likeMapper.delete(new QueryWrapper<DiscoverLikeEntity>().eq("post_id", postId));
         favoriteMapper.delete(new QueryWrapper<DiscoverFavoriteEntity>().eq("post_id", postId));
@@ -275,7 +370,10 @@ public class DiscoverService {
         response.body = post.body;
         response.poiId = post.poiId;
         response.category = post.category;
-        response.coverUrl = post.coverUrl;
+        response.images = postImages(post.id).stream()
+                .map(this::toImageResponse)
+                .toList();
+        response.coverUrl = response.images.isEmpty() ? post.coverUrl : response.images.get(0).imageUrl;
         response.status = post.status;
         response.rating = post.rating;
         response.createdAt = post.createdAt;
@@ -297,6 +395,27 @@ public class DiscoverService {
                     .toList();
         }
         return response;
+    }
+
+    private DiscoverPostImageResponse toImageResponse(DiscoverPostImageEntity image) {
+        DiscoverPostImageResponse response = new DiscoverPostImageResponse();
+        response.id = image.id;
+        response.imageUrl = image.imageUrl;
+        response.sortOrder = image.sortOrder;
+        response.createdAt = image.createdAt;
+        return response;
+    }
+
+    private List<DiscoverPostImageEntity> postImages(Long postId) {
+        if (postId == null || imageMapper == null) {
+            return List.of();
+        }
+        return imageMapper.selectList(
+                new QueryWrapper<DiscoverPostImageEntity>()
+                        .eq("post_id", postId)
+                        .orderByAsc("sort_order")
+                        .orderByAsc("id")
+        );
     }
 
     private DiscoverCommentResponse toCommentResponse(DiscoverCommentEntity comment, Long userId) {
@@ -357,6 +476,67 @@ public class DiscoverService {
             return normalized;
         }
         return normalized.substring(0, SUMMARY_LENGTH - 3) + "...";
+    }
+
+    private String storeDiscoverImage(Long postId, MultipartFile image) {
+        if (image == null || image.isEmpty()) {
+            throw new BizException("Please select images to upload");
+        }
+        if (image.getSize() > MAX_IMAGE_BYTES) {
+            throw new BizException("Note image cannot exceed 5MB");
+        }
+        String contentType = image.getContentType() == null ? "" : image.getContentType().toLowerCase(Locale.ROOT);
+        if (!ALLOWED_IMAGE_TYPES.contains(contentType)) {
+            throw new BizException("Note images only support JPG, PNG, WEBP, or GIF");
+        }
+        Path directory = Paths.get(uploadDir).toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(directory);
+            String filename = "note-" + postId + "-" + UUID.randomUUID() + imageExtension(image);
+            Path target = directory.resolve(filename).normalize();
+            if (!target.startsWith(directory)) {
+                throw new BizException("Invalid note image filename");
+            }
+            try (InputStream input = image.getInputStream()) {
+                Files.copy(input, target);
+            }
+            return "/uploads/discover/" + filename;
+        } catch (IOException ex) {
+            throw new BizException("Note image save failed");
+        }
+    }
+
+    private String imageExtension(MultipartFile image) {
+        String extension = StringUtils.getFilenameExtension(image.getOriginalFilename());
+        if (StringUtils.hasText(extension)) {
+            String normalized = extension.toLowerCase(Locale.ROOT);
+            if (Set.of("jpg", "jpeg", "png", "webp", "gif").contains(normalized)) {
+                return "." + normalized;
+            }
+        }
+        return switch (image.getContentType() == null ? "" : image.getContentType().toLowerCase(Locale.ROOT)) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> ".jpg";
+        };
+    }
+
+    private void deleteLocalImageIfManaged(String imageUrl) {
+        if (!StringUtils.hasText(imageUrl) || !imageUrl.startsWith("/uploads/")) {
+            return;
+        }
+        Path directory = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path root = directory.getParent() == null ? directory : directory.getParent();
+        String relativePath = imageUrl.substring("/uploads/".length()).replace("/", root.getFileSystem().getSeparator());
+        Path target = root.resolve(relativePath).normalize();
+        if (!target.startsWith(root)) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(target);
+        } catch (IOException ignored) {
+        }
     }
 
     private String normalizeSort(String sort) {

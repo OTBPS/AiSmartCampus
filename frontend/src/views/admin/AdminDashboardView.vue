@@ -54,13 +54,14 @@
           </div>
         </div>
         <div v-if="stats.mapActionStats.length" class="map-action-chart" role="list" :aria-label="$t('admin.mapActionDistribution')">
-          <div class="map-action-y-axis" aria-hidden="true">
-            <span v-for="tick in mapActionAxisTicks" :key="tick">{{ tick }}</span>
-          </div>
           <div class="map-action-plot">
             <div v-for="item in stats.mapActionStats" :key="item.key" class="map-action-bar-item" role="listitem">
-              <strong class="map-action-value">{{ item.count }}</strong>
-              <span class="map-action-bar" :style="{ height: actionBarHeight(item) }" aria-hidden="true" />
+              <div class="map-action-bar-stack">
+                <strong class="map-action-value">{{ item.count }}</strong>
+                <span class="map-action-bar-well">
+                  <span class="map-action-bar" :style="{ height: actionBarHeight(item) }" aria-hidden="true" />
+                </span>
+              </div>
               <span class="map-action-label">{{ actionLabel(item.key) }}</span>
             </div>
           </div>
@@ -129,10 +130,6 @@ onMounted(load)
 
 const mapActionMax = computed(() => Math.max(...stats.mapActionStats.map((item) => item.count), 1))
 const mapActionAxisMax = computed(() => niceAxisMax(mapActionMax.value))
-const mapActionAxisTicks = computed(() => {
-  const step = mapActionAxisMax.value / 4
-  return Array.from({ length: 5 }, (_, index) => Math.round(mapActionAxisMax.value - (step * index)))
-})
 
 async function load() {
   Object.assign(stats, await adminApi.dashboard())

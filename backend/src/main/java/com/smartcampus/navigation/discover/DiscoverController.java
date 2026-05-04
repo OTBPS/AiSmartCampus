@@ -5,6 +5,7 @@ import com.smartcampus.navigation.security.JwtTokenService;
 import com.smartcampus.navigation.security.SecurityUsers;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/discover")
@@ -46,6 +48,18 @@ public class DiscoverController {
     public ApiResponse<DiscoverPostResponse> update(@PathVariable Long id, @Valid @RequestBody DiscoverPostRequest request) {
         JwtTokenService.TokenUser user = SecurityUsers.current();
         return ApiResponse.ok(discoverService.update(id, user.id(), request));
+    }
+
+    @PostMapping(value = "/posts/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<DiscoverPostResponse> uploadImages(@PathVariable Long id, @RequestParam("images") List<MultipartFile> images) {
+        JwtTokenService.TokenUser user = SecurityUsers.current();
+        return ApiResponse.ok(discoverService.uploadImages(id, user.id(), images));
+    }
+
+    @DeleteMapping("/posts/{postId}/images/{imageId}")
+    public ApiResponse<DiscoverPostResponse> deleteImage(@PathVariable Long postId, @PathVariable Long imageId) {
+        JwtTokenService.TokenUser user = SecurityUsers.current();
+        return ApiResponse.ok(discoverService.deleteImage(postId, imageId, user.id()));
     }
 
     @DeleteMapping("/posts/{id}")

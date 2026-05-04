@@ -13,6 +13,12 @@ import org.junit.jupiter.api.Test;
 
 class DeepSeekAiServiceTest {
     @Test
+    void normalizesPrefixedApiKeyToDeepSeekSecret() {
+        assertEquals("sk-test", DeepSeekAiService.normalizeApiKey("AppName:sk-test"));
+        assertEquals("sk-test", DeepSeekAiService.normalizeApiKey("sk-test"));
+    }
+
+    @Test
     void parserRejectsNonJsonContent() {
         DeepSeekAiService service = parserService();
 
@@ -79,6 +85,47 @@ class DeepSeekAiServiceTest {
         AiChatResponse response = service.parseStructuredResponse(content, "en-US", List.of(printer()));
 
         assertEquals("find_note", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
+    void parserLimitsSmallTalkReplyToOneHundredCharacters() {
+        DeepSeekAiService service = parserService();
+        String longReply = "\u5357".repeat(120);
+        String content = """
+                {
+                  "intent": "small_talk",
+                  "reply": "%s",
+                  "poiIds": [9],
+                  "toolCalls": [{"tool": "searchPoi", "arguments": {}}],
+                  "mapActions": [{"type": "highlight_pois", "poiIds": [9]}]
+                }
+                """.formatted(longReply);
+
+        AiChatResponse response = service.parseStructuredResponse(content, "zh-CN", List.of(printer()));
+
+        assertEquals("small_talk", response.intent);
+        assertEquals(100, response.reply.codePointCount(0, response.reply.length()));
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.toolCalls.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+    }
+
+    @Test
+    void smallTalkParserReturnsSmallTalkOnlyAndLimitsReply() {
+        DeepSeekAiService service = parserService();
+        String content = """
+                {
+                  "reply": "%s"
+                }
+                """.formatted("A".repeat(120));
+
+        AiChatResponse response = service.parseSmallTalkResponse(content, "en-US");
+
+        assertEquals("small_talk", response.intent);
+        assertEquals(100, response.reply.length());
         assertTrue(response.pois.isEmpty());
         assertTrue(response.toolCalls.isEmpty());
         assertTrue(response.mapActions.isEmpty());

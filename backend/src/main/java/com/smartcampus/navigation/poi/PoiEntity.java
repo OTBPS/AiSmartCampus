@@ -22,5 +22,6 @@ public class PoiEntity {
     public Boolean enabled;
     public Integer mapRank;
     public String sourceUrl;
+    public String imageUrl;
     public LocalDateTime updatedAt;
 }
