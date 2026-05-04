@@ -9,7 +9,9 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartcampus.navigation.poi.PoiEntity;
 import com.smartcampus.navigation.poi.PoiService;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
@@ -301,6 +303,61 @@ class MockAiServiceTest {
     }
 
     @Test
+    void currentLocationRouteUsesStartPointPayloadAndOnlyRealPoiIds() {
+        PoiEntity library = poiWithCoordinate(1L, "NUIST Library Study Area", "STUDY", "library,quiet,study", true, 118.7200, 32.2050);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(library));
+
+        AiChatResponse response = service(poiService).preview(
+                "Go from current location to NUIST Library Study Area",
+                "en-US",
+                currentLocationContext(118.7100, 32.2000)
+        );
+
+        assertEquals("route_help", response.intent);
+        assertEquals(List.of(library), response.pois);
+        assertEquals("planCampusRouteFromCurrentLocation", response.toolCalls.get(0).tool);
+        assertEquals(List.of(1L), response.mapActions.get(0).poiIds);
+        assertEquals("current_location", response.mapActions.get(0).payload.get("source"));
+        Map<?, ?> startPoint = (Map<?, ?>) response.mapActions.get(0).payload.get("startPoint");
+        assertEquals(118.7100, startPoint.get("longitude"));
+        assertEquals(32.2000, startPoint.get("latitude"));
+    }
+
+    @Test
+    void nearbyDiningRecommendationSortsByDistanceFromCurrentLocation() {
+        PoiEntity far = poiWithCoordinate(1L, "Far Dining Hall", "DINING", "dining,canteen", true, 118.7400, 32.2400);
+        PoiEntity near = poiWithCoordinate(2L, "Near Dining Hall", "DINING", "dining,canteen", true, 118.7110, 32.2010);
+        PoiEntity service = poiWithCoordinate(3L, "Campus Print Shop", "SERVICE", "print,service", true, 118.7105, 32.2005);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(far, near, service));
+
+        AiChatResponse response = service(poiService).preview(
+                "\u63a8\u8350\u6211\u9644\u8fd1\u7684\u9910\u5385",
+                "zh-CN",
+                currentLocationContext(118.7100, 32.2000)
+        );
+
+        assertEquals("recommend_place", response.intent);
+        assertEquals(List.of(near, far), response.pois);
+        assertEquals("recommendNearbyPois", response.toolCalls.get(0).tool);
+        assertEquals(List.of(2L, 1L), response.mapActions.get(0).poiIds);
+    }
+
+    @Test
+    void nearbyQuestionWithoutLocationRequestsLocationInsteadOfFallbackRoute() {
+        PoiService poiService = mock(PoiService.class);
+
+        AiChatResponse response = service(poiService).preview("\u63a8\u8350\u6211\u9644\u8fd1\u7684\u9910\u5385", "zh-CN");
+
+        assertEquals("recommend_place", response.intent);
+        assertTrue(response.pois.isEmpty());
+        assertTrue(response.mapActions.isEmpty());
+        assertEquals("requestCurrentLocation", response.toolCalls.get(0).tool);
+        assertTrue(response.reply.contains("\u5b9a\u4f4d"));
+    }
+
+    @Test
     void invalidRouteContextFallsBackToExistingMockRoute() {
         PoiEntity library = poi(1L, "NUIST Library Study Area", "STUDY", "library,quiet,outlets,study,sheltered", true);
         PoiEntity dorm = poi(7L, "Xiyuan Dormitory Area", "DORM", "dorm,dormitory,living-area,night-access,xiyuan", false);
@@ -338,6 +395,17 @@ class MockAiServiceTest {
         return context;
     }
 
+    private AiChatRequest.RouteContext currentLocationContext(double longitude, double latitude) {
+        AiChatRequest.RouteContext context = new AiChatRequest.RouteContext();
+        context.currentLocation = new AiChatRequest.CurrentLocation();
+        context.currentLocation.longitude = longitude;
+        context.currentLocation.latitude = latitude;
+        context.currentLocation.accuracyMeters = 12.0;
+        context.currentLocation.label = "Current location";
+        context.currentLocation.coordinateSystem = "GCJ02";
+        return context;
+    }
+
     private PoiEntity poi(Long id, String name, String category, String tags, boolean sheltered) {
         PoiEntity poi = new PoiEntity();
         poi.id = id;
@@ -355,6 +423,13 @@ class MockAiServiceTest {
     private PoiEntity poi(Long id, String name, String category, String tags, boolean sheltered, Integer mapRank) {
         PoiEntity poi = poi(id, name, category, tags, sheltered);
         poi.mapRank = mapRank;
+        return poi;
+    }
+
+    private PoiEntity poiWithCoordinate(Long id, String name, String category, String tags, boolean sheltered, double longitude, double latitude) {
+        PoiEntity poi = poi(id, name, category, tags, sheltered);
+        poi.longitude = BigDecimal.valueOf(longitude);
+        poi.latitude = BigDecimal.valueOf(latitude);
         return poi;
     }
 }

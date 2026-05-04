@@ -161,6 +161,8 @@ public class DeepSeekAiService {
         builder.append(" For greetings, thanks, capability questions, or other small talk, use intent small_talk, reply briefly, and return empty poiIds, toolCalls, and mapActions. ");
         builder.append(" For requests about campus notes, comments, reviews, or discover posts for a place, use intent find_note, reply briefly, and return empty poiIds, toolCalls, and mapActions. ");
         builder.append(" For route questions, return draw_route.poiIds in route order: origin, waypoints, destination. ");
+        builder.append("If currentLocation is supplied and the user asks to route from current location, keep draw_route.poiIds to real destination/waypoint POI IDs only and include payload.startPoint with longitude, latitude, label, and coordinateSystem. ");
+        builder.append("If the user asks for nearby places and currentLocation is supplied, prefer nearest matching POIs by distance. ");
         builder.append("For popular, hottest, top N, ranking, Place Rank, or map rank requests, use intent recommend_place, choose matching POIs sorted by mapRank ascending where a smaller non-null mapRank is more popular, and return at most the requested N. ");
         builder.append("For user needs like buying snacks, instant noodles, drinks, daily supplies, shopping, supermarket, store, or asking where to go for them, use intent recommend_place and choose supermarket or shopping POIs. ");
         builder.append("If map route context is supplied, use text-mentioned origin/destination first, fill missing route endpoints from context, keep context waypoint order, append extra text waypoints, and de-duplicate. ");
@@ -189,6 +191,14 @@ public class DeepSeekAiService {
             builder.append("originPoiId=").append(routeContext.originPoiId).append(", ");
             builder.append("destinationPoiId=").append(routeContext.destinationPoiId).append(", ");
             builder.append("waypointPoiIds=").append(routeContext.waypointPoiIds == null ? List.of() : routeContext.waypointPoiIds).append(".\n");
+            if (routeContext.currentLocation != null) {
+                builder.append("Current user location: ");
+                builder.append("longitude=").append(routeContext.currentLocation.longitude).append(", ");
+                builder.append("latitude=").append(routeContext.currentLocation.latitude).append(", ");
+                builder.append("accuracyMeters=").append(routeContext.currentLocation.accuracyMeters).append(", ");
+                builder.append("label=").append(routeContext.currentLocation.label).append(", ");
+                builder.append("coordinateSystem=").append(routeContext.currentLocation.coordinateSystem == null ? "GCJ02" : routeContext.currentLocation.coordinateSystem).append(".\n");
+            }
             builder.append("Ignore IDs that are not present in the campus POI list. ");
             builder.append("If enough valid endpoints exist, produce route_help with draw_route.");
         }

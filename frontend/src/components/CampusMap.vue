@@ -2,6 +2,15 @@
   <section class="map-shell" :aria-label="$t('nav.map')" @click="closeContextMenu">
     <div ref="amapContainer" class="map-placeholder" :class="{ active: amapReady }"></div>
     <div v-if="amapFallbackReason" class="map-fallback-badge">{{ amapFallbackReason }}</div>
+    <button
+      class="map-location-status"
+      :class="locationStatusClass"
+      type="button"
+      @click.stop="$emit('locate-current')"
+    >
+      <span>{{ locationStatusText }}</span>
+      <small v-if="locationCanRetry">{{ locale === 'en-US' ? 'Retry' : '\u91cd\u8bd5' }}</small>
+    </button>
 
     <template v-if="!amapReady">
       <div class="map-road main"></div>
@@ -39,6 +48,18 @@
         <span>{{ categoryInitial(poi.category) }}</span>
       </button>
       <span
+        v-if="normalizedCurrentLocation"
+        class="current-location-pin"
+        :style="{ left: `${normalizedCurrentLocation.x}%`, top: `${normalizedCurrentLocation.y}%` }"
+      ></span>
+      <span
+        v-if="normalizedCurrentLocation"
+        class="map-label current-location-label"
+        :style="{ left: `${normalizedCurrentLocation.x}%`, top: `${normalizedCurrentLocation.y}%` }"
+      >
+        {{ currentLocationLabel }}
+      </span>
+      <span
         v-for="poi in normalizedPois"
         :key="`label-${poi.id}`"
         class="map-label"
@@ -73,10 +94,13 @@ const props = defineProps({
   highlightedIds: { type: Array, default: () => [] },
   selectedPoiId: { type: Number, default: null },
   routeAction: { type: Object, default: null },
-  routeMode: { type: String, default: 'walking' }
+  routeMode: { type: String, default: 'walking' },
+  currentLocation: { type: Object, default: null },
+  locationStatus: { type: String, default: 'idle' },
+  locationMessage: { type: String, default: '' }
 })
 
-const emit = defineEmits(['select', 'route-context'])
+const emit = defineEmits(['select', 'route-context', 'locate-current'])
 const { locale } = useI18n()
 const amapContainer = ref(null)
 const amapReady = ref(false)
@@ -92,25 +116,47 @@ let routePlanners = []
 let fallbackRouteLines = []
 let routePointMarkers = []
 let markers = []
+let currentLocationMarker
 
-const normalizedPois = computed(() => {
-  const validPois = props.pois.filter((poi) => isValidCoordinate(poi))
-  if (!validPois.length) return []
-  const lngs = validPois.map((poi) => Number(poi.longitude))
-  const lats = validPois.map((poi) => Number(poi.latitude))
-  const minLng = Math.min(...lngs)
-  const maxLng = Math.max(...lngs)
-  const minLat = Math.min(...lats)
-  const maxLat = Math.max(...lats)
-  return validPois.map((poi) => {
-    const lngRange = maxLng - minLng || 1
-    const latRange = maxLat - minLat || 1
-    return {
-      ...poi,
-      x: 12 + ((Number(poi.longitude) - minLng) / lngRange) * 76,
-      y: 82 - ((Number(poi.latitude) - minLat) / latRange) * 64
-    }
-  })
+const normalizationBounds = computed(() => {
+  const points = [
+    ...props.pois.filter((poi) => isValidCoordinate(poi)),
+    props.currentLocation,
+    rawRouteStartPoint()
+  ].filter((point) => isValidCoordinate(point))
+  if (!points.length) return null
+  const lngs = points.map((point) => Number(point.longitude))
+  const lats = points.map((point) => Number(point.latitude))
+  return {
+    minLng: Math.min(...lngs),
+    maxLng: Math.max(...lngs),
+    minLat: Math.min(...lats),
+    maxLat: Math.max(...lats)
+  }
+})
+
+const normalizedPois = computed(() => props.pois
+  .filter((poi) => isValidCoordinate(poi))
+  .map((poi) => normalizeFallbackPoint(poi))
+  .filter(Boolean))
+
+const normalizedCurrentLocation = computed(() => {
+  if (!isValidCoordinate(props.currentLocation)) return null
+  return normalizeFallbackPoint(currentLocationPoint(props.currentLocation))
+})
+
+const currentLocationLabel = computed(() => props.currentLocation?.label || (locale.value === 'en-US' ? 'Current location' : '\u5f53\u524d\u4f4d\u7f6e'))
+const locationCanRetry = computed(() => ['denied', 'error', 'unsupported', 'idle'].includes(props.locationStatus))
+const locationStatusClass = computed(() => ({
+  success: props.locationStatus === 'success',
+  locating: props.locationStatus === 'locating',
+  error: ['denied', 'error', 'unsupported'].includes(props.locationStatus)
+}))
+const locationStatusText = computed(() => {
+  if (props.locationMessage) return props.locationMessage
+  if (props.locationStatus === 'success') return locale.value === 'en-US' ? 'Current location ready' : '\u5f53\u524d\u4f4d\u7f6e\u5df2\u5c31\u7eea'
+  if (props.locationStatus === 'locating') return locale.value === 'en-US' ? 'Locating...' : '\u6b63\u5728\u5b9a\u4f4d...'
+  return locale.value === 'en-US' ? 'Use current location' : '\u4f7f\u7528\u5f53\u524d\u4f4d\u7f6e'
 })
 
 const routePoints = computed(() => routePoisByAction().map((poi, index, list) => ({
@@ -142,11 +188,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearRoute()
   markers.forEach((marker) => marker.setMap(null))
+  if (currentLocationMarker) currentLocationMarker.setMap(null)
   if (map?.destroy) map.destroy()
 })
 
 watch(
-  () => [props.pois, props.highlightedIds, props.selectedPoiId],
+  () => [props.pois, props.highlightedIds, props.selectedPoiId, props.currentLocation],
   () => {
     if (amapReady.value) {
       renderMarkers()
@@ -196,6 +243,10 @@ function initAmap() {
 function renderMarkers() {
   if (!map || !AMapRef) return
   markers.forEach((marker) => marker.setMap(null))
+  if (currentLocationMarker) {
+    currentLocationMarker.setMap(null)
+    currentLocationMarker = null
+  }
   markers = props.pois.filter((poi) => isValidCoordinate(poi)).map((poi) => {
     const marker = new AMapRef.Marker({
       position: poiLngLat(poi),
@@ -211,6 +262,19 @@ function renderMarkers() {
     marker.setMap(map)
     return marker
   })
+  renderCurrentLocationMarker()
+}
+
+function renderCurrentLocationMarker() {
+  if (!map || !AMapRef || !isValidCoordinate(props.currentLocation)) return
+  currentLocationMarker = new AMapRef.Marker({
+    position: poiLngLat(props.currentLocation),
+    title: currentLocationLabel.value,
+    anchor: 'center',
+    zIndex: 120,
+    content: currentLocationContent()
+  })
+  currentLocationMarker.setMap(map)
 }
 
 function renderRoute() {
@@ -334,10 +398,18 @@ function focusVisiblePois() {
   const activeIds = new Set([...props.highlightedIds, props.selectedPoiId].filter(Boolean))
   const targetPois = props.pois.filter((poi) => activeIds.has(poi.id) && isValidCoordinate(poi))
   if (targetPois.length) {
-    focusLngLats(targetPois.map(poiLngLat))
+    const points = targetPois.map(poiLngLat)
+    if (isValidCoordinate(props.currentLocation)) {
+      points.push(poiLngLat(props.currentLocation))
+    }
+    focusLngLats(points)
     return
   }
-  if (props.pois.length) focusLngLats(props.pois.filter(isValidCoordinate).map(poiLngLat))
+  const points = props.pois.filter(isValidCoordinate).map(poiLngLat)
+  if (isValidCoordinate(props.currentLocation)) {
+    points.push(poiLngLat(props.currentLocation))
+  }
+  if (points.length) focusLngLats(points)
 }
 
 function focusRoute() {
@@ -357,11 +429,47 @@ function focusLngLats(points) {
 
 function routePoisByAction() {
   const ids = props.routeAction?.poiIds || []
-  if (ids.length < 2) return []
-  return ids
+  const routePois = ids
     .map((id) => props.pois.find((poi) => poi.id === id))
     .filter((poi) => poi && isValidCoordinate(poi))
     .map((poi) => normalizedPois.value.find((item) => item.id === poi.id) || poi)
+  const start = routeStartPoint()
+  const points = start ? [start, ...routePois] : routePois
+  return points.length >= 2 ? points : []
+}
+
+function routeStartPoint() {
+  const point = rawRouteStartPoint()
+  if (!point) return null
+  return normalizeFallbackPoint(point) || point
+}
+
+function rawRouteStartPoint() {
+  const point = props.routeAction?.payload?.startPoint
+  if (!isValidCoordinate(point)) return null
+  return currentLocationPoint(point, true)
+}
+
+function currentLocationPoint(source, routeStart = false) {
+  return {
+    id: routeStart ? '__current-route-start' : '__current-location',
+    name: source?.label || (locale.value === 'en-US' ? 'Current location' : '\u5f53\u524d\u4f4d\u7f6e'),
+    longitude: Number(source.longitude),
+    latitude: Number(source.latitude),
+    isCurrentLocation: true
+  }
+}
+
+function normalizeFallbackPoint(point) {
+  const bounds = normalizationBounds.value
+  if (!bounds || !isValidCoordinate(point)) return null
+  const lngRange = bounds.maxLng - bounds.minLng || 1
+  const latRange = bounds.maxLat - bounds.minLat || 1
+  return {
+    ...point,
+    x: 12 + ((Number(point.longitude) - bounds.minLng) / lngRange) * 76,
+    y: 82 - ((Number(point.latitude) - bounds.minLat) / latRange) * 64
+  }
 }
 
 function openContextMenu(poi, event) {
@@ -413,11 +521,16 @@ function markerContent(poi) {
   return `<div class="amap-poi-marker${active}${shelterCandidate}"><span>${escapeHtml(initial)}</span><b>${escapeHtml(poi.name || '')}</b>${candidateLabel}</div>`
 }
 
+function currentLocationContent() {
+  return `<div class="amap-current-marker"><span></span><b>${escapeHtml(currentLocationLabel.value)}</b></div>`
+}
+
 function endpointContent(label, type, shelter = false) {
   return `<div class="amap-route-endpoint ${type}${shelter ? ' shelter' : ''}">${escapeHtml(label)}</div>`
 }
 
 function routePointLabel(index, total, poi = null) {
+  if (poi?.isCurrentLocation) return locale.value === 'en-US' ? 'Me' : '\u6211'
   if (index === 0) return locale.value === 'en-US' ? 'Start' : '\u8d77\u70b9'
   if (index === total - 1) return locale.value === 'en-US' ? 'End' : '\u7ec8\u70b9'
   if (isShelterWaypoint(poi?.id)) return locale.value === 'en-US' ? 'Shelter' : '\u906e\u853d\u70b9'

@@ -123,6 +123,24 @@ class AiChatServiceTest {
     }
 
     @Test
+    void currentLocationRuleBypassesDeepSeekForStableCoordinates() {
+        MockAiService mockAiService = mock(MockAiService.class);
+        DeepSeekAiService deepSeekAiService = mock(DeepSeekAiService.class);
+        String message = "\u6211\u60f3\u4ece\u5f53\u524d\u4f4d\u7f6e\u524d\u5f80\u56fe\u4e66\u9986";
+        AiChatRequest.RouteContext context = currentLocationContext();
+        AiChatResponse ruleResponse = currentLocationRouteResponse();
+        when(mockAiService.preview(eq(message), eq("zh-CN"), eq(context))).thenReturn(ruleResponse);
+        when(deepSeekAiService.isConfigured()).thenReturn(true);
+
+        AiChatResponse response = service(mockAiService, deepSeekAiService).preview(message, "zh-CN", context);
+
+        assertSame(ruleResponse, response);
+        assertEquals("route_help", response.intent);
+        verify(deepSeekAiService, never()).chat(eq(message), eq("zh-CN"), eq(context));
+        verify(deepSeekAiService, never()).smallTalk(eq(message), eq("zh-CN"));
+    }
+
+    @Test
     void deepSeekSmallTalkFailureFallsBackToLocalNoResultPoiResponse() {
         MockAiService mockAiService = mock(MockAiService.class);
         DeepSeekAiService deepSeekAiService = mock(DeepSeekAiService.class);
@@ -251,6 +269,28 @@ class AiChatServiceTest {
         return response;
     }
 
+    private AiChatResponse currentLocationRouteResponse() {
+        AiChatResponse response = new AiChatResponse();
+        response.intent = "route_help";
+        response.reply = "\u5df2\u751f\u6210\u4ece\u5f53\u524d\u4f4d\u7f6e\u5230\u56fe\u4e66\u9986\u7684\u6821\u56ed\u8def\u7ebf\u3002";
+        response.pois = List.of(library());
+        AiChatResponse.MapAction route = new AiChatResponse.MapAction("draw_route");
+        route.poiIds = List.of(1L);
+        route.payload = java.util.Map.of("source", "current_location", "startPoint", java.util.Map.of("longitude", 118.71, "latitude", 32.2));
+        response.mapActions.add(route);
+        response.toolCalls.add(new AiChatResponse.ToolCall("planCampusRouteFromCurrentLocation", java.util.Map.of("poiIds", List.of(1L))));
+        return response;
+    }
+
+    private AiChatRequest.RouteContext currentLocationContext() {
+        AiChatRequest.RouteContext context = new AiChatRequest.RouteContext();
+        context.currentLocation = new AiChatRequest.CurrentLocation();
+        context.currentLocation.longitude = 118.71;
+        context.currentLocation.latitude = 32.2;
+        context.currentLocation.coordinateSystem = "GCJ02";
+        return context;
+    }
+
     private AiChatResponse smallTalkResponse(String reply) {
         AiChatResponse response = new AiChatResponse();
         response.intent = "small_talk";
@@ -291,6 +331,16 @@ class AiChatServiceTest {
         poi.tags = "canteen,dining,top20";
         poi.enabled = true;
         poi.mapRank = 9;
+        return poi;
+    }
+
+    private PoiEntity library() {
+        PoiEntity poi = new PoiEntity();
+        poi.id = 1L;
+        poi.name = "NUIST Library Study Area";
+        poi.category = "STUDY";
+        poi.tags = "library,study";
+        poi.enabled = true;
         return poi;
     }
 

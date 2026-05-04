@@ -1066,6 +1066,52 @@ a {
   color: #92400e;
 }
 
+.map-location-status {
+  position: absolute;
+  z-index: 35;
+  top: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(360px, calc(100% - 28px));
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 7px 11px;
+  color: #1e3a8a;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.13);
+  cursor: pointer;
+}
+
+.map-fallback-badge + .map-location-status {
+  top: 50px;
+}
+
+.map-location-status.success {
+  border-color: rgba(15, 118, 110, 0.24);
+  color: var(--scn-primary-dark);
+}
+
+.map-location-status.locating {
+  color: #0369a1;
+}
+
+.map-location-status.error {
+  border-color: rgba(220, 38, 38, 0.24);
+  color: #991b1b;
+}
+
+.map-location-status small {
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  padding: 2px 7px;
+  color: inherit;
+  font-size: 11px;
+}
+
 .map-road {
   position: absolute;
   border-radius: 999px;
@@ -1170,6 +1216,18 @@ a {
   box-shadow: 0 0 0 8px rgba(14, 165, 233, 0.18), 0 10px 24px rgba(15, 23, 42, 0.22);
 }
 
+.current-location-pin {
+  position: absolute;
+  z-index: 8;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #2563eb;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 9px rgba(37, 99, 235, 0.18), 0 10px 22px rgba(15, 23, 42, 0.22);
+}
+
 .map-label {
   position: absolute;
   z-index: 6;
@@ -1181,6 +1239,11 @@ a {
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.current-location-label {
+  z-index: 9;
+  color: #1e3a8a;
 }
 
 .amap-poi-marker {
@@ -1236,6 +1299,30 @@ a {
   padding: 2px 6px;
   font-size: 11px;
   font-style: normal;
+}
+
+.amap-current-marker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.96);
+  padding: 5px 9px 5px 5px;
+  color: #1e3a8a;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.14), 0 14px 30px rgba(15, 23, 42, 0.2);
+  white-space: nowrap;
+}
+
+.amap-current-marker span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #2563eb;
 }
 
 .amap-route-endpoint {

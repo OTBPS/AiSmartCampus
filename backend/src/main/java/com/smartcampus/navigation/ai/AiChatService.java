@@ -8,6 +8,7 @@ import com.smartcampus.navigation.discover.DiscoverService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +18,11 @@ import org.springframework.util.StringUtils;
 @Service
 public class AiChatService {
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
+    private static final Set<String> CURRENT_LOCATION_TOOLS = Set.of(
+            "planCampusRouteFromCurrentLocation",
+            "recommendNearbyPois",
+            "requestCurrentLocation"
+    );
 
     private final MockAiService mockAiService;
     private final DeepSeekAiService deepSeekAiService;
@@ -81,7 +87,7 @@ public class AiChatService {
         AiChatResponse response;
         if ("deepseek".equalsIgnoreCase(provider) && deepSeekAiService.isConfigured()) {
             AiChatResponse ruleResponse = mockPreview(message, locale, routeContext);
-            if (isRankedPlaceRule(ruleResponse)) {
+            if (isRankedPlaceRule(ruleResponse) || isCurrentLocationRule(ruleResponse)) {
                 response = ruleResponse;
             } else {
                 boolean shortChat = shouldUseDeepSeekShortChat(ruleResponse, message);
@@ -140,6 +146,12 @@ public class AiChatService {
         return response != null
                 && response.toolCalls != null
                 && response.toolCalls.stream().anyMatch(call -> "searchPoiByRank".equals(call.tool));
+    }
+
+    private boolean isCurrentLocationRule(AiChatResponse response) {
+        return response != null
+                && response.toolCalls != null
+                && response.toolCalls.stream().anyMatch(call -> call.tool != null && CURRENT_LOCATION_TOOLS.contains(call.tool));
     }
 
     private boolean isNoResultFindPoi(AiChatResponse response) {

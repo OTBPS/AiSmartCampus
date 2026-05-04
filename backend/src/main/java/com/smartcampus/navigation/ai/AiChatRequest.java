@@ -14,5 +14,14 @@ public class AiChatRequest {
         public Long originPoiId;
         public Long destinationPoiId;
         public List<Long> waypointPoiIds = new ArrayList<>();
+        public CurrentLocation currentLocation;
+    }
+
+    public static class CurrentLocation {
+        public Double longitude;
+        public Double latitude;
+        public Double accuracyMeters;
+        public String label;
+        public String coordinateSystem;
     }
 }

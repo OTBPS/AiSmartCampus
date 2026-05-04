@@ -120,8 +120,12 @@
           :selected-poi-id="selectedPoi?.id"
           :route-action="effectiveRouteAction"
           :route-mode="routeMode"
+          :current-location="currentLocation"
+          :location-status="locationStatus"
+          :location-message="locationMessage"
           @select="selectPoi"
           @route-context="handleRouteContextAction"
+          @locate-current="requestCurrentLocation"
         />
         <section v-if="selectedPoi" class="panel detail-panel">
           <div class="detail-copy">
@@ -194,6 +198,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppShell from '../../components/AppShell.vue'
 import CampusMap from '../../components/CampusMap.vue'
 import { aiApi, feedbackApi, poiApi } from '../../api/modules'
+import { loadAmap } from '../../utils/amapLoader'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -217,6 +222,9 @@ const feedback = reactive({ type: 'INFO_ERROR', content: '' })
 const messages = ref(defaultMessages())
 const failedPoiImageKeys = ref([])
 const routeMode = ref('walking')
+const currentLocation = ref(null)
+const locationStatus = ref('idle')
+const locationMessage = ref('')
 
 const CAMPUS_IMAGE = {
   key: 'campus',
@@ -335,6 +343,7 @@ onMounted(async () => {
   applyDraftFromRoute()
   chatStateReady.value = true
   persistChatState()
+  requestCurrentLocation()
 })
 
 watch(
@@ -380,6 +389,82 @@ async function loadPois() {
   pois.value = await poiApi.list({ enabledOnly: true, mapOnly: true, limit: 20 })
   if (!selectedPoi.value) {
     selectedPoi.value = pois.value[0] || null
+  }
+}
+
+function requestCurrentLocation() {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    locationStatus.value = 'unsupported'
+    locationMessage.value = localText('locationUnsupported')
+    return
+  }
+  locationStatus.value = 'locating'
+  locationMessage.value = localText('locating')
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const raw = {
+        longitude: position.coords.longitude,
+        latitude: position.coords.latitude,
+        accuracyMeters: position.coords.accuracy,
+        label: localText('currentLocation'),
+        coordinateSystem: 'WGS84'
+      }
+      currentLocation.value = await convertCurrentLocation(raw)
+      locationStatus.value = 'success'
+      locationMessage.value = currentLocation.value.accuracyMeters
+        ? localText('locatedWithAccuracy', { accuracy: Math.round(currentLocation.value.accuracyMeters) })
+        : localText('located')
+    },
+    (error) => {
+      currentLocation.value = null
+      locationStatus.value = error?.code === 1 ? 'denied' : 'error'
+      locationMessage.value = error?.code === 1 ? localText('locationDenied') : localText('locationFailed')
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  )
+}
+
+async function convertCurrentLocation(raw) {
+  try {
+    const AMap = await loadAmap()
+    if (!AMap?.convertFrom) return raw
+    const converted = await new Promise((resolve) => {
+      AMap.convertFrom([raw.longitude, raw.latitude], 'gps', (status, result) => {
+        const location = result?.locations?.[0]
+        if (status === 'complete' && location) {
+          resolve({
+            longitude: Number(location.lng ?? location.getLng?.()),
+            latitude: Number(location.lat ?? location.getLat?.())
+          })
+          return
+        }
+        resolve(null)
+      })
+    })
+    if (!converted || !Number.isFinite(converted.longitude) || !Number.isFinite(converted.latitude)) {
+      return raw
+    }
+    return {
+      ...raw,
+      ...converted,
+      coordinateSystem: 'GCJ02'
+    }
+  } catch {
+    return raw
+  }
+}
+
+function currentLocationPayload() {
+  const location = currentLocation.value
+  if (!location || !Number.isFinite(Number(location.longitude)) || !Number.isFinite(Number(location.latitude))) {
+    return null
+  }
+  return {
+    longitude: Number(location.longitude),
+    latitude: Number(location.latitude),
+    accuracyMeters: Number.isFinite(Number(location.accuracyMeters)) ? Number(location.accuracyMeters) : null,
+    label: location.label || localText('currentLocation'),
+    coordinateSystem: location.coordinateSystem || 'GCJ02'
   }
 }
 
@@ -655,16 +740,22 @@ function generateRouteFromDraft() {
 }
 
 function routeContextForMessage(text) {
-  return hasRouteDraft.value && looksLikeRouteText(text) ? buildRouteContext() : null
+  const includeRouteDraft = hasRouteDraft.value && looksLikeRouteText(text)
+  return buildRouteContext(includeRouteDraft)
 }
 
-function buildRouteContext() {
-  if (!hasRouteDraft.value) return null
-  return {
-    originPoiId: routeDraft.origin?.id || null,
-    destinationPoiId: routeDraft.destination?.id || null,
-    waypointPoiIds: routeDraft.waypoints.map((poi) => poi.id)
+function buildRouteContext(includeRouteDraft = hasRouteDraft.value) {
+  const context = {}
+  if (includeRouteDraft && hasRouteDraft.value) {
+    context.originPoiId = routeDraft.origin?.id || null
+    context.destinationPoiId = routeDraft.destination?.id || null
+    context.waypointPoiIds = routeDraft.waypoints.map((poi) => poi.id)
   }
+  const location = currentLocationPayload()
+  if (location) {
+    context.currentLocation = location
+  }
+  return Object.keys(context).length ? context : null
 }
 
 function routeDraftText() {
@@ -805,7 +896,7 @@ function stripContextPrefix(text) {
     .trim()
 }
 
-function localText(key) {
+function localText(key, params = {}) {
   const zh = {
     routeDraft: '\u8def\u7ebf\u8349\u7a3f',
     origin: '\u8d77\u70b9',
@@ -836,7 +927,14 @@ function localText(key) {
     hoursLabel: '\u5f00\u653e\u65f6\u95f4',
     tagsLabel: '\u6807\u7b7e',
     recommendReason: '\u63a8\u8350\u7406\u7531',
-    routeContext: '\u8def\u7ebf\u8bf4\u660e'
+    routeContext: '\u8def\u7ebf\u8bf4\u660e',
+    currentLocation: '\u5f53\u524d\u4f4d\u7f6e',
+    locating: '\u6b63\u5728\u83b7\u53d6\u5f53\u524d\u4f4d\u7f6e...',
+    located: '\u5df2\u5b9a\u4f4d\u5230\u5f53\u524d\u4f4d\u7f6e',
+    locatedWithAccuracy: '\u5df2\u5b9a\u4f4d\uff0c\u7cbe\u5ea6\u7ea6 {accuracy}m',
+    locationDenied: '\u5b9a\u4f4d\u6743\u9650\u5df2\u62d2\u7edd\uff0c\u53ef\u70b9\u51fb\u91cd\u8bd5',
+    locationFailed: '\u5b9a\u4f4d\u5931\u8d25\uff0c\u53ef\u70b9\u51fb\u91cd\u8bd5',
+    locationUnsupported: '\u5f53\u524d\u6d4f\u89c8\u5668\u4e0d\u652f\u6301\u5b9a\u4f4d'
   }
   const en = {
     routeDraft: 'Route Draft',
@@ -868,9 +966,20 @@ function localText(key) {
     hoursLabel: 'Opening Hours',
     tagsLabel: 'Tags',
     recommendReason: 'Recommendation reason',
-    routeContext: 'Route context'
+    routeContext: 'Route context',
+    currentLocation: 'Current location',
+    locating: 'Locating current position...',
+    located: 'Current position located',
+    locatedWithAccuracy: 'Located, accuracy about {accuracy}m',
+    locationDenied: 'Location permission was denied. Click retry',
+    locationFailed: 'Location failed. Click retry',
+    locationUnsupported: 'This browser does not support location'
   }
-  return (locale.value === 'en-US' ? en : zh)[key] || key
+  let value = (locale.value === 'en-US' ? en : zh)[key] || key
+  Object.entries(params).forEach(([name, replacement]) => {
+    value = value.replace(`{${name}}`, replacement)
+  })
+  return value
 }
 
 function scrollMessagesToBottom() {

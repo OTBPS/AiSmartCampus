@@ -70,6 +70,15 @@ public class MockAiService {
         if (isSmallTalk(normalized)) {
             return smallTalk(normalized, locale);
         }
+        if (isCurrentLocationRouteQuestion(normalized)) {
+            return routeFromCurrentLocation(message, locale, routeContext);
+        }
+        if (isNearbyRecommendationQuestion(normalized)) {
+            return recommendNearbyPlaces(message, locale, routeContext);
+        }
+        if (mentionsCurrentLocationOrNearby(normalized) && !hasCurrentLocation(routeContext)) {
+            return locationRequired(locale, "nearby".equals(currentLocationRequestKind(normalized)) ? "recommend_place" : "route_help");
+        }
         if (isRankedPlaceQuestion(normalized)) {
             return recommendRankedPlaces(message, locale);
         }
@@ -194,6 +203,195 @@ public class MockAiService {
             response.mapActions.add(openDetail(pois.get(0).id));
         }
         return response;
+    }
+
+    private AiChatResponse routeFromCurrentLocation(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        if (!hasCurrentLocation(routeContext)) {
+            return locationRequired(locale, "route_help");
+        }
+        List<PoiEntity> all = poiService.list(null, null, null, true);
+        if (all == null) {
+            all = List.of();
+        }
+        List<PoiEntity> matched = matchPoisInMessage(message, all);
+        if (matched.isEmpty()) {
+            AiChatResponse response = base("route_help", text(locale,
+                    "\u8bf7\u8bf4\u660e\u8981\u524d\u5f80\u7684\u6821\u56ed\u5730\u70b9\uff0c\u4f8b\u5982\uff1a\u6211\u60f3\u4ece\u5f53\u524d\u4f4d\u7f6e\u524d\u5f80\u56fe\u4e66\u9986\u3002",
+                    "Please name the campus destination, for example: go from my current location to the library."), List.of());
+            response.toolCalls.add(new AiChatResponse.ToolCall("planCampusRouteFromCurrentLocation", Map.of("missing", "destination")));
+            return response;
+        }
+
+        List<PoiEntity> routePois = matched.stream().limit(6).toList();
+        PoiEntity destination = routePois.get(routePois.size() - 1);
+        List<String> via = routePois.size() > 1
+                ? routePois.subList(0, routePois.size() - 1).stream().map(poi -> poi.name).toList()
+                : List.of();
+        Map<String, Object> startPoint = currentLocationPayload(routeContext.currentLocation, locale);
+        String from = startPoint.get("label").toString();
+        String to = destination.name;
+
+        AiChatResponse response = base("route_help", text(locale,
+                "\u5df2\u751f\u6210\u4ece\u5f53\u524d\u4f4d\u7f6e\u5230 " + to + " \u7684\u6821\u56ed\u8def\u7ebf\u3002",
+                "I prepared the campus route from your current location to " + to + "."), routePois);
+        List<Long> ids = routePois.stream().map(poi -> poi.id).toList();
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("poiIds", ids);
+        arguments.put("source", "current_location");
+        arguments.put("startPoint", startPoint);
+        response.toolCalls.add(new AiChatResponse.ToolCall("planCampusRouteFromCurrentLocation", arguments));
+
+        AiChatResponse.MapAction action = new AiChatResponse.MapAction("draw_route");
+        action.poiIds = ids;
+        action.routeMode = "AMAP_FALLBACK";
+        action.payload = new LinkedHashMap<>();
+        action.payload.put("reason", text(locale, "\u5f53\u524d\u4f4d\u7f6e\u5230\u76ee\u6807\u5730\u70b9", "current location to destination"));
+        action.payload.put("from", from);
+        action.payload.put("to", to);
+        action.payload.put("via", via);
+        action.payload.put("source", "current_location");
+        action.payload.put("startPoint", startPoint);
+        response.mapActions.add(action);
+        response.mapActions.add(highlight(routePois));
+        response.mapActions.add(openDetail(destination.id));
+        return response;
+    }
+
+    private AiChatResponse recommendNearbyPlaces(String message, String locale, AiChatRequest.RouteContext routeContext) {
+        if (!hasCurrentLocation(routeContext)) {
+            return locationRequired(locale, "recommend_place");
+        }
+        String normalized = normalizeText(message);
+        int limit = requestedLimit(normalized);
+        String category = rankedPlaceCategory(normalized);
+        List<String> tags = extractPreferenceTags(normalized);
+        List<PoiEntity> all = poiService.list(null, null, null, true);
+        if (all == null) {
+            all = List.of();
+        }
+        List<PoiEntity> matching = all.stream()
+                .filter(this::hasPoiCoordinate)
+                .filter(poi -> matchesNearbyTarget(poi, category, tags, normalized))
+                .sorted(Comparator.comparingDouble(poi -> distanceMeters(routeContext.currentLocation, poi)))
+                .limit(limit)
+                .toList();
+        if (matching.isEmpty()) {
+            matching = all.stream()
+                    .filter(this::hasPoiCoordinate)
+                    .sorted(Comparator.comparingDouble(poi -> distanceMeters(routeContext.currentLocation, poi)))
+                    .limit(limit)
+                    .toList();
+        }
+
+        AiChatResponse response = base("recommend_place", nearbyReply(locale, matching.size(), category), matching);
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("sort", "distance");
+        arguments.put("limit", limit);
+        arguments.put("source", "current_location");
+        arguments.put("currentLocation", currentLocationPayload(routeContext.currentLocation, locale));
+        if (category != null) {
+            arguments.put("category", category);
+        }
+        if (!tags.isEmpty()) {
+            arguments.put("tags", tags);
+        }
+        response.toolCalls.add(new AiChatResponse.ToolCall("recommendNearbyPois", arguments));
+        response.mapActions.add(highlight(matching));
+        if (!matching.isEmpty()) {
+            response.mapActions.add(openDetail(matching.get(0).id));
+        }
+        return response;
+    }
+
+    private AiChatResponse locationRequired(String locale, String intent) {
+        AiChatResponse response = base(intent, text(locale,
+                "\u8bf7\u5148\u5141\u8bb8\u6d4f\u89c8\u5668\u5b9a\u4f4d\uff0c\u6216\u70b9\u51fb\u5730\u56fe\u4e0a\u7684\u5b9a\u4f4d\u6309\u94ae\u540e\u518d\u8bd5\u3002",
+                "Please allow browser location or click the map location button, then try again."), List.of());
+        response.toolCalls.add(new AiChatResponse.ToolCall("requestCurrentLocation", Map.of("reason", intent)));
+        return response;
+    }
+
+    private boolean matchesNearbyTarget(PoiEntity poi, String category, List<String> tags, String normalized) {
+        if (category != null) {
+            return matchesRankedPlaceCategory(poi, category, normalized);
+        }
+        if (!tags.isEmpty()) {
+            return matchesRecommendation(poi, tags, normalized);
+        }
+        return true;
+    }
+
+    private String nearbyReply(String locale, int count, String category) {
+        if ("en-US".equals(locale)) {
+            return count == 0
+                    ? "No nearby matching campus places were found."
+                    : "I found the nearest " + count + " matching campus places from your current location.";
+        }
+        String target = switch (category == null ? "" : category) {
+            case "DINING" -> "\u9910\u996e\u5730\u70b9";
+            case "STUDY" -> "\u5b66\u4e60\u5730\u70b9";
+            case "SPORTS" -> "\u8fd0\u52a8\u5730\u70b9";
+            case "DORM" -> "\u5bbf\u820d";
+            case "TEACHING" -> "\u6559\u5b66\u5730\u70b9";
+            case "SERVICE" -> "\u670d\u52a1\u5730\u70b9";
+            default -> "\u5730\u70b9";
+        };
+        return count == 0
+                ? "\u6682\u672a\u627e\u5230\u9644\u8fd1\u5339\u914d\u7684" + target + "\u3002"
+                : "\u5df2\u6309\u4f60\u7684\u5f53\u524d\u4f4d\u7f6e\u8ddd\u79bb\uff0c\u63a8\u8350\u6700\u8fd1\u7684 " + count + " \u4e2a" + target + "\u3002";
+    }
+
+    private boolean hasCurrentLocation(AiChatRequest.RouteContext routeContext) {
+        return routeContext != null
+                && routeContext.currentLocation != null
+                && validCoordinate(routeContext.currentLocation.longitude, routeContext.currentLocation.latitude);
+    }
+
+    private Map<String, Object> currentLocationPayload(AiChatRequest.CurrentLocation location, String locale) {
+        Map<String, Object> point = new LinkedHashMap<>();
+        point.put("longitude", location.longitude);
+        point.put("latitude", location.latitude);
+        if (location.accuracyMeters != null) {
+            point.put("accuracyMeters", location.accuracyMeters);
+        }
+        point.put("label", location.label == null || location.label.isBlank()
+                ? text(locale, "\u5f53\u524d\u4f4d\u7f6e", "Current location")
+                : location.label);
+        point.put("coordinateSystem", location.coordinateSystem == null || location.coordinateSystem.isBlank()
+                ? "GCJ02"
+                : location.coordinateSystem);
+        return point;
+    }
+
+    private double distanceMeters(AiChatRequest.CurrentLocation location, PoiEntity poi) {
+        double lng1 = location.longitude;
+        double lat1 = location.latitude;
+        double lng2 = poi.longitude.doubleValue();
+        double lat2 = poi.latitude.doubleValue();
+        double earthRadiusMeters = 6371000;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadiusMeters * c;
+    }
+
+    private boolean hasPoiCoordinate(PoiEntity poi) {
+        return poi != null
+                && poi.longitude != null
+                && poi.latitude != null
+                && validCoordinate(poi.longitude.doubleValue(), poi.latitude.doubleValue());
+    }
+
+    private boolean validCoordinate(Double longitude, Double latitude) {
+        return longitude != null
+                && latitude != null
+                && Double.isFinite(longitude)
+                && Double.isFinite(latitude)
+                && Math.abs(longitude) <= 180
+                && Math.abs(latitude) <= 90;
     }
 
     private AiChatResponse routeHelp(String message, String locale, AiChatRequest.RouteContext routeContext) {
@@ -483,6 +681,43 @@ public class MockAiService {
                 || isShoppingNeedQuestion(normalized);
     }
 
+    private boolean isCurrentLocationRouteQuestion(String normalized) {
+        return mentionsCurrentLocation(normalized)
+                && containsAny(normalized,
+                "to", "go", "route", "directions", "navigate", "navigation", "fromcurrentlocation", "fromhere",
+                "\u5230", "\u53bb", "\u524d\u5f80", "\u5bfc\u822a", "\u8def\u7ebf", "\u600e\u4e48\u8d70", "\u4ece\u5f53\u524d\u4f4d\u7f6e");
+    }
+
+    private boolean isNearbyRecommendationQuestion(String normalized) {
+        return mentionsNearby(normalized)
+                && (isRecommendationQuestion(normalized)
+                || containsAny(normalized,
+                "find", "search", "nearest", "closest", "around", "nearby", "nearme",
+                "\u627e", "\u9644\u8fd1", "\u5468\u8fb9", "\u8eab\u8fb9", "\u6700\u8fd1",
+                "restaurant", "restaurants", "dining", "canteen", "study", "library", "shop", "store", "supermarket",
+                "\u9910\u5385", "\u98df\u5802", "\u56fe\u4e66\u9986", "\u81ea\u4e60", "\u5546\u5e97", "\u8d85\u5e02"));
+    }
+
+    private boolean mentionsCurrentLocationOrNearby(String normalized) {
+        return mentionsCurrentLocation(normalized) || mentionsNearby(normalized);
+    }
+
+    private boolean mentionsCurrentLocation(String normalized) {
+        return containsAny(normalized,
+                "currentlocation", "mylocation", "myposition", "fromhere",
+                "\u5f53\u524d\u4f4d\u7f6e", "\u6211\u7684\u4f4d\u7f6e", "\u6211\u73b0\u5728\u7684\u4f4d\u7f6e", "\u6211\u8fd9\u91cc");
+    }
+
+    private boolean mentionsNearby(String normalized) {
+        return containsAny(normalized,
+                "nearby", "nearme", "aroundme", "nearest", "closest",
+                "\u9644\u8fd1", "\u5468\u8fb9", "\u8eab\u8fb9", "\u6211\u9644\u8fd1", "\u79bb\u6211\u6700\u8fd1");
+    }
+
+    private String currentLocationRequestKind(String normalized) {
+        return mentionsNearby(normalized) && !isCurrentLocationRouteQuestion(normalized) ? "nearby" : "route";
+    }
+
     private boolean isRankedPlaceQuestion(String normalized) {
         boolean asksRank = containsAny(normalized,
                 "top", "popular", "hot", "rank", "ranking", "mostpopular", "hottest", "placerank",
@@ -682,6 +917,18 @@ public class MockAiService {
                 .sorted(Comparator.comparingInt(poi -> normalized.indexOf(normalizeText(poi.name))))
                 .toList());
         addPlainChineseAliasMatches(matched, candidates, normalized);
+        addPlainChineseAliasMatches(matched, candidates, normalized, Map.ofEntries(
+                Map.entry("\u56fe\u4e66\u9986", "library"),
+                Map.entry("\u81ea\u4e60", "study"),
+                Map.entry("\u5b66\u4e60", "study"),
+                Map.entry("\u98df\u5802", "canteen"),
+                Map.entry("\u9910\u5385", "dining"),
+                Map.entry("\u5546\u5e97", "shop"),
+                Map.entry("\u8d85\u5e02", "supermarket"),
+                Map.entry("\u4f53\u80b2\u9986", "gym"),
+                Map.entry("\u7bee\u7403", "basketball"),
+                Map.entry("\u6253\u5370", "print")
+        ));
         Map<String, String> aliases = Map.ofEntries(
                 Map.entry("西苑宿舍", "Xiyuan"),
                 Map.entry("东苑宿舍", "Dongyuan"),
@@ -975,6 +1222,21 @@ public class MockAiService {
                 }
                 candidates.stream()
                         .filter(poi -> normalizeText(poi.name + poi.tags).contains(normalizeText(entry.getValue())))
+                        .findFirst()
+                        .ifPresent(poi -> {
+                            if (matched.stream().noneMatch(item -> item.id.equals(poi.id))) {
+                                matched.add(poi);
+                            }
+                        });
+            }
+        }
+    }
+
+    private void addPlainChineseAliasMatches(List<PoiEntity> matched, List<PoiEntity> candidates, String normalized, Map<String, String> aliases) {
+        for (Map.Entry<String, String> entry : orderedAliases(aliases)) {
+            if (normalized.contains(normalizeText(entry.getKey()))) {
+                candidates.stream()
+                        .filter(poi -> normalizeText(poi.name + "," + poi.category + "," + poi.tags).contains(normalizeText(entry.getValue())))
                         .findFirst()
                         .ifPresent(poi -> {
                             if (matched.stream().noneMatch(item -> item.id.equals(poi.id))) {
