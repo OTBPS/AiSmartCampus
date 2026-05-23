@@ -18,6 +18,8 @@ import org.springframework.util.StringUtils;
 
 @Service
 public class RouteWeatherEnhancer {
+    // Temporary test switch: set to false after route-weather planning verification.
+    private static final boolean FORCE_SEVERE_WEATHER_FOR_ROUTE_TEST = true;
     private static final int MAX_SHELTER_CANDIDATES = 5;
     private static final double MAX_ROUTE_DISTANCE_METERS = 50.0;
     private static final double SAME_POINT_DISTANCE_METERS = 5.0;
@@ -205,6 +207,11 @@ public class RouteWeatherEnhancer {
     }
 
     private String severeWeatherReason(WeatherResponse weather, boolean english) {
+        if (FORCE_SEVERE_WEATHER_FOR_ROUTE_TEST) {
+            return english
+                    ? "Severe weather route testing is temporarily enabled."
+                    : "\u6076\u52a3\u5929\u6c14\u8def\u7ebf\u6d4b\u8bd5\u5df2\u4e34\u65f6\u5f00\u542f\u3002";
+        }
         if (weather == null || weather.now == null) {
             return "";
         }

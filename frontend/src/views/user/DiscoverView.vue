@@ -6,11 +6,27 @@
       </div>
       <div class="discover-head-actions">
         <el-button class="discover-create-button" type="primary" @click="openCreate">{{ localText('create') }}</el-button>
-        <el-radio-group v-model="sortMode" @change="load">
-          <el-radio-button value="TIME">{{ localText('sortTime') }}</el-radio-button>
-          <el-radio-button value="LIKES">{{ localText('sortLikes') }}</el-radio-button>
-        </el-radio-group>
-        <el-button @click="load">{{ $t('common.refresh') }}</el-button>
+        <div class="discover-filter-actions">
+          <el-input
+            v-model="keyword"
+            class="discover-search-input"
+            clearable
+            :placeholder="localText('searchPlaceholder')"
+            @keyup.enter="load"
+            @clear="load"
+          >
+            <template #append>
+              <el-button :aria-label="localText('search')" @click="load">
+                <el-icon><Search /></el-icon>
+              </el-button>
+            </template>
+          </el-input>
+          <el-radio-group v-model="sortMode" @change="load">
+            <el-radio-button value="TIME">{{ localText('sortTime') }}</el-radio-button>
+            <el-radio-button value="LIKES">{{ localText('sortLikes') }}</el-radio-button>
+          </el-radio-group>
+          <el-button @click="load">{{ $t('common.refresh') }}</el-button>
+        </div>
       </div>
     </div>
 
@@ -70,14 +86,14 @@
         </div>
       </article>
     </div>
-    <el-empty v-else :description="localText('empty')" />
+    <el-empty v-else :description="emptyDescription" />
 
     <DiscoverPostEditor v-model="editorVisible" @saved="handleSaved" />
   </AppShell>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -89,12 +105,19 @@ const { locale } = useI18n()
 const router = useRouter()
 const posts = ref([])
 const sortMode = ref('TIME')
+const keyword = ref('')
 const editorVisible = ref(false)
+const trimmedKeyword = computed(() => keyword.value.trim())
+const emptyDescription = computed(() => trimmedKeyword.value ? localText('emptySearch') : localText('empty'))
 
 onMounted(load)
 
 async function load() {
-  posts.value = await discoverApi.posts({ sort: sortMode.value })
+  const searchKeyword = trimmedKeyword.value
+  const params = { sort: sortMode.value }
+  if (searchKeyword) params.keyword = searchKeyword
+  const results = await discoverApi.posts(params)
+  posts.value = searchKeyword ? filterPostsByTitle(results, searchKeyword) : results
 }
 
 function openCreate() {
@@ -147,24 +170,39 @@ function formatTime(value) {
   return date.toLocaleDateString(locale.value === 'en-US' ? 'en-US' : 'zh-CN', { month: 'short', day: 'numeric' })
 }
 
+function filterPostsByTitle(items, searchKeyword) {
+  const normalizedKeyword = normalizeSearchText(searchKeyword)
+  return items.filter((post) => normalizeSearchText(post.title).includes(normalizedKeyword))
+}
+
+function normalizeSearchText(value) {
+  return (value || '').toLowerCase().replace(/\s+/g, '')
+}
+
 function localText(key) {
   const zh = {
     sortTime: '按时间',
     sortLikes: '按喜欢',
+    search: '搜索',
+    searchPlaceholder: '按标题搜索 notes',
     create: '发布 note',
     unknownPlace: '未知地点',
     like: '喜欢',
     favorite: '收藏',
-    empty: '暂无发现 note'
+    empty: '暂无发现 note',
+    emptySearch: '没有匹配标题的 note'
   }
   const en = {
     sortTime: 'Latest',
     sortLikes: 'Most liked',
+    search: 'Search',
+    searchPlaceholder: 'Search notes by title',
     create: 'Create note',
     unknownPlace: 'Unknown place',
     like: 'Like',
     favorite: 'Save',
-    empty: 'No discover notes yet'
+    empty: 'No discover notes yet',
+    emptySearch: 'No notes match that title'
   }
   return (locale.value === 'en-US' ? en : zh)[key] || key
 }

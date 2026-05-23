@@ -11,6 +11,7 @@ export const poiApi = {
   get: (id) => http.get(`/pois/${id}`),
   create: (payload) => http.post('/pois/admin', payload),
   update: (id, payload) => http.put(`/pois/admin/${id}`, payload),
+  remove: (id) => http.delete(`/pois/admin/${id}`),
   updateStatus: (id, payload) => http.put(`/pois/admin/${id}/status`, payload),
   uploadImage: (id, file) => {
     const formData = new FormData()

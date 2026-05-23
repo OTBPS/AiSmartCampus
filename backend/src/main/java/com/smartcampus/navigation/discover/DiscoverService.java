@@ -81,10 +81,17 @@ public class DiscoverService {
     }
 
     public List<DiscoverPostResponse> listPublished(String sort, Long userId) {
+        return listPublished(sort, null, userId);
+    }
+
+    public List<DiscoverPostResponse> listPublished(String sort, String keyword, Long userId) {
+        QueryWrapper<DiscoverPostEntity> query = new QueryWrapper<DiscoverPostEntity>()
+                .eq("status", "PUBLISHED");
+        if (StringUtils.hasText(keyword)) {
+            query.like("title", keyword.trim());
+        }
         List<DiscoverPostResponse> responses = postMapper.selectList(
-                        new QueryWrapper<DiscoverPostEntity>()
-                                .eq("status", "PUBLISHED")
-                                .orderByDesc("created_at")
+                        query.orderByDesc("created_at")
                 ).stream()
                 .map(post -> toResponse(post, userId, false))
                 .toList();

@@ -128,6 +128,44 @@ class PoiServiceTest {
         verify(poiMapper, never()).updateById(any(PoiEntity.class));
     }
 
+    @Test
+    void deleteRemovesPoiAndManagedImage() throws Exception {
+        Path poiUploadDir = tempDir.resolve("uploads").resolve("poi");
+        Files.createDirectories(poiUploadDir);
+        Files.writeString(poiUploadDir.resolve("old.png"), "old");
+
+        PoiMapper poiMapper = mock(PoiMapper.class);
+        PoiEntity entity = poi();
+        entity.imageUrl = "/uploads/poi/old.png";
+        when(poiMapper.selectById(7L)).thenReturn(entity);
+        when(poiMapper.deleteById(7L)).thenReturn(1);
+
+        new PoiService(poiMapper, poiUploadDir.toString()).delete(7L);
+
+        verify(poiMapper).deleteById(7L);
+        assertFalse(Files.exists(poiUploadDir.resolve("old.png")));
+    }
+
+    @Test
+    void deleteDoesNotRemoveImagesOutsidePoiUploadDir() throws Exception {
+        Path uploadRoot = tempDir.resolve("uploads");
+        Path poiUploadDir = uploadRoot.resolve("poi");
+        Path discoverUploadDir = uploadRoot.resolve("discover");
+        Files.createDirectories(discoverUploadDir);
+        Files.writeString(discoverUploadDir.resolve("shared.png"), "shared");
+
+        PoiMapper poiMapper = mock(PoiMapper.class);
+        PoiEntity entity = poi();
+        entity.imageUrl = "/uploads/discover/shared.png";
+        when(poiMapper.selectById(7L)).thenReturn(entity);
+        when(poiMapper.deleteById(7L)).thenReturn(1);
+
+        new PoiService(poiMapper, poiUploadDir.toString()).delete(7L);
+
+        verify(poiMapper).deleteById(7L);
+        assertTrue(Files.exists(discoverUploadDir.resolve("shared.png")));
+    }
+
     private QueryWrapper<PoiEntity> capturedWrapper(PoiMapper poiMapper) {
         ArgumentCaptor<QueryWrapper<PoiEntity>> captor = ArgumentCaptor.forClass(QueryWrapper.class);
         verify(poiMapper).selectList(captor.capture());

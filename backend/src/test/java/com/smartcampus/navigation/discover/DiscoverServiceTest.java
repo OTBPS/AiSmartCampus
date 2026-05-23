@@ -19,9 +19,10 @@ import com.smartcampus.navigation.user.UserEntity;
 import com.smartcampus.navigation.user.UserMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +44,25 @@ class DiscoverServiceTest {
 
         assertEquals(2L, posts.get(0).id);
         assertEquals(1L, posts.get(1).id);
+    }
+
+    @Test
+    void listPublishedFiltersByTitleKeyword() {
+        TestContext ctx = new TestContext();
+        DiscoverPostEntity library = post(1L, 7L);
+        library.title = "Library quiet study";
+        when(ctx.postMapper.selectList(any())).thenReturn(List.of(library));
+        ctx.stubCounts();
+
+        List<DiscoverPostResponse> posts = ctx.service().listPublished("TIME", " library ", 7L);
+
+        assertEquals(List.of(1L), posts.stream().map(post -> post.id).toList());
+        verify(ctx.postMapper).selectList(argThat(query -> {
+            String sql = query.getSqlSegment();
+            return sql.contains("status")
+                    && sql.contains("title")
+                    && sql.toUpperCase(Locale.ROOT).contains("LIKE");
+        }));
     }
 
     @Test

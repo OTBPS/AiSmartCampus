@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 
 class RouteWeatherEnhancerTest {
     @Test
-    void clearWeatherKeepsRouteUnchanged() {
+    void forcedWeatherTestingSuggestsCandidatesEvenWhenClear() {
         PoiEntity origin = poi(1L, "Dorm", 118.700, 32.200, false, 1);
         PoiEntity destination = poi(2L, "Library", 118.710, 32.200, false, 2);
         PoiEntity shelter = poi(3L, "Sheltered Corridor", 118.705, 32.200, true, 3);
@@ -31,8 +31,9 @@ class RouteWeatherEnhancerTest {
 
         AiChatResponse.MapAction route = response.mapActions.get(0);
         assertEquals(List.of(1L, 2L), route.poiIds);
+        assertTrue((Boolean) route.payload.get("weatherShelterSuggested"));
         assertFalse((Boolean) route.payload.get("weatherAdjusted"));
-        assertFalse(route.payload.containsKey("shelterCandidateIds"));
+        assertEquals(List.of(3L), route.payload.get("shelterCandidateIds"));
     }
 
     @Test

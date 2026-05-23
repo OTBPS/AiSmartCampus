@@ -4,7 +4,19 @@
       <section class="panel ai-panel">
         <div class="panel-pad">
           <div class="map-chat-input-head">
-            <span>{{ localText('chatPanel') }}</span>
+            <div class="map-chat-title-group">
+              <el-button
+                class="map-chat-back-button"
+                circle
+                plain
+                :aria-label="localText('back')"
+                :title="localText('back')"
+                @click="handleBackNavigation"
+              >
+                <el-icon><ArrowLeft /></el-icon>
+              </el-button>
+              <span>{{ localText('chatPanel') }}</span>
+            </div>
             <el-button size="small" plain @click="clearPageChat">{{ localText('clearChat') }}</el-button>
           </div>
           <div class="route-mode-switch">
@@ -126,6 +138,7 @@
           @select="selectPoi"
           @route-context="handleRouteContextAction"
           @locate-current="requestCurrentLocation"
+          @reset="resetMapView"
         />
         <section v-if="selectedPoi" class="panel detail-panel">
           <div class="detail-copy">
@@ -530,6 +543,22 @@ function clearPageChat() {
   scrollMessagesToBottom()
 }
 
+function resetMapView() {
+  lastResponse.value = null
+  highlightedIds.value = []
+  selectedShelterCandidateIds.value = []
+  shelterCandidatesDismissed.value = false
+  isolateSelectedPoi.value = false
+  clearRouteDraft()
+  selectedPoi.value = pois.value[0] || null
+  const nextQuery = { ...route.query }
+  delete nextQuery.poiId
+  delete nextQuery.draft
+  if (Object.keys(nextQuery).length !== Object.keys(route.query).length) {
+    router.replace({ path: route.path, query: nextQuery })
+  }
+}
+
 async function applyPoiFromRoute(value = route.query.poiId) {
   const raw = Array.isArray(value) ? value[0] : value
   const id = Number(raw)
@@ -685,6 +714,14 @@ function dismissShelterCandidates() {
 function openNoteFromChat(note) {
   if (!note?.id) return
   router.push({ path: `/discover/${note.id}`, query: { from: 'map-chat' } })
+}
+
+function handleBackNavigation() {
+  if (window.history.state?.back) {
+    router.back()
+    return
+  }
+  router.push('/')
 }
 
 function selectPoi(poi, isolate = true) {
@@ -917,6 +954,7 @@ function localText(key, params = {}) {
     shelterAddedToast: '\u5df2\u5c06\u906e\u853d\u70b9\u52a0\u5165\u8def\u7ebf',
     fromRoute: '\u8ddd\u8def\u7ebf',
     fromStart: '\u8ddd\u8d77\u70b9',
+    back: '\u8fd4\u56de',
     chatPanel: 'AI \u804a\u5929',
     clearChat: '\u6e05\u9664\u804a\u5929',
     routeMode: '\u51fa\u884c\u65b9\u5f0f',
@@ -956,6 +994,7 @@ function localText(key, params = {}) {
     shelterAddedToast: 'Sheltered points were added to the route',
     fromRoute: 'from route',
     fromStart: 'from start',
+    back: 'Back',
     chatPanel: 'AI Chat',
     clearChat: 'Clear Chat',
     routeMode: 'Travel Mode',

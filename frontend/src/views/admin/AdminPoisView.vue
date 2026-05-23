@@ -2,12 +2,12 @@
   <AppShell>
     <div class="page-head">
       <div>
-        <h1>{{ $t('admin.poiTitle') }}</h1>
-        <p>{{ $t('admin.poiSubtitle') }}</p>
+        <h1>{{ readOnly ? $t('admin.poiSearchTitle') : $t('admin.poiTitle') }}</h1>
+        <p v-if="!readOnly">{{ $t('admin.poiSubtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-button @click="load">{{ $t('common.refresh') }}</el-button>
-        <el-button type="primary" @click="openCreate">{{ $t('admin.addPoi') }}</el-button>
+        <el-button v-if="!readOnly" type="primary" @click="openCreate">{{ $t('admin.addPoi') }}</el-button>
       </div>
     </div>
 
@@ -23,11 +23,16 @@
           <el-option :label="$t('common.maintenance')" value="MAINTENANCE" />
         </el-select>
         <el-input v-model="filters.tag" clearable :placeholder="$t('admin.tagFilter')" style="max-width: 180px" />
-        <el-switch v-model="filters.enabledOnly" :active-text="$t('admin.enabledOnly')" />
+        <el-switch v-if="!readOnly" v-model="filters.enabledOnly" :active-text="$t('admin.enabledOnly')" />
         <span class="filter-count">{{ $t('common.poiCount', { current: filteredPois.length, total: pois.length }) }}</span>
       </div>
 
-      <el-table :data="filteredPois" height="620">
+      <el-table
+        :data="filteredPois"
+        height="620"
+        :row-class-name="poiRowClassName"
+        @row-click="handlePoiRowClick"
+      >
         <el-table-column prop="name" :label="$t('admin.name')" width="180" />
         <el-table-column prop="category" :label="$t('common.category')" width="120" />
         <el-table-column :label="localText('poiImage')" width="92">
@@ -55,7 +60,7 @@
             <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? $t('common.enabled') : $t('common.disabled') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.action')" width="160">
+        <el-table-column v-if="!readOnly" :label="$t('common.action')" width="160">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">{{ $t('common.edit') }}</el-button>
             <el-button link :type="row.enabled ? 'warning' : 'success'" @click="toggle(row)">
@@ -126,10 +131,26 @@
         </el-form-item>
         <el-form-item :label="$t('admin.remark')"><el-input v-model="form.remark" type="textarea" /></el-form-item>
         <el-checkbox v-model="form.sheltered">{{ $t('admin.sheltered') }}</el-checkbox>
+        <section v-if="form.id" class="poi-delete-zone">
+          <div>
+            <strong>{{ localText('deletePoiTitle') }}</strong>
+            <p>{{ localText('deletePoiHint') }}</p>
+          </div>
+          <el-button
+            type="danger"
+            plain
+            :icon="Delete"
+            :loading="deleting"
+            :disabled="saving"
+            @click="confirmDeletePoi"
+          >
+            {{ localText('deletePoi') }}
+          </el-button>
+        </section>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ $t('common.save') }}</el-button>
+        <el-button :disabled="deleting" @click="visible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" :disabled="deleting" @click="save">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AppShell>
@@ -137,18 +158,25 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Upload } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import AppShell from '../../components/AppShell.vue'
 import CoordinatePreview from '../../components/CoordinatePreview.vue'
 import { poiApi } from '../../api/modules'
 
 const { t, locale } = useI18n()
+const router = useRouter()
+const props = defineProps({
+  readOnly: { type: Boolean, default: false }
+})
+const readOnly = computed(() => props.readOnly)
 const categoryOptions = ['STUDY', 'TEACHING', 'DINING', 'DORM', 'SERVICE', 'SPORTS', 'TRANSPORT', 'LANDMARK']
 const pois = ref([])
 const visible = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
 const pendingImageFile = ref(null)
 const pendingImagePreview = ref('')
 const imageMarkedForDelete = ref(false)
@@ -158,7 +186,7 @@ const filters = reactive({
   category: '',
   openStatus: '',
   tag: '',
-  enabledOnly: false
+  enabledOnly: props.readOnly
 })
 
 onMounted(load)
@@ -183,7 +211,7 @@ function emptyForm() {
 }
 
 async function load() {
-  pois.value = await poiApi.list({ enabledOnly: false })
+  pois.value = await poiApi.list({ enabledOnly: props.readOnly })
 }
 
 const filteredPois = computed(() => {
@@ -203,13 +231,24 @@ const poiImagePreview = computed(() => pendingImagePreview.value || (imageMarked
 
 onUnmounted(clearPendingImage)
 
+function poiRowClassName() {
+  return props.readOnly ? 'poi-search-row' : ''
+}
+
+function handlePoiRowClick(row) {
+  if (!props.readOnly || !row?.id) return
+  router.push({ path: '/map-chat', query: { poiId: row.id, from: 'poi-search' } })
+}
+
 function openCreate() {
+  if (props.readOnly) return
   resetImageState()
   Object.assign(form, emptyForm())
   visible.value = true
 }
 
 function openEdit(row) {
+  if (props.readOnly) return
   resetImageState()
   Object.assign(form, emptyForm(), row, {
     tags: row.tags || '',
@@ -229,6 +268,7 @@ function updateCoordinates(point) {
 }
 
 async function save() {
+  if (props.readOnly) return
   saving.value = true
   try {
     const payload = buildPayload()
@@ -257,8 +297,35 @@ async function save() {
 }
 
 async function toggle(row) {
+  if (props.readOnly) return
   await poiApi.updateStatus(row.id, { enabled: !row.enabled })
   load()
+}
+
+async function confirmDeletePoi() {
+  if (props.readOnly) return
+  if (!form.id) return
+  try {
+    await ElMessageBox.confirm(localText('deletePoiMessage', { name: form.name || `#${form.id}` }), localText('deletePoiTitle'), {
+      confirmButtonText: localText('deletePoi'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger'
+    })
+    deleting.value = true
+    await poiApi.remove(form.id)
+    ElMessage.success(localText('deletePoiSuccess'))
+    visible.value = false
+    Object.assign(form, emptyForm())
+    resetImageState()
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error.message || `${error}`)
+    }
+  } finally {
+    deleting.value = false
+  }
 }
 
 function splitTags(tags) {
@@ -355,7 +422,7 @@ function clearPendingImage() {
   pendingImagePreview.value = ''
 }
 
-function localText(key) {
+function localText(key, params = {}) {
   const zh = {
     poiImage: '地点图片',
     noImage: '暂无图片',
@@ -363,7 +430,12 @@ function localText(key) {
     removeImage: '移除图片',
     imageHint: '每个地点只能保留一张图片；重新选择会替换原图。支持 JPG、PNG、WEBP、GIF，最大 5MB。',
     imageTypeError: '只支持 JPG、PNG、WEBP 或 GIF 图片',
-    imageSizeError: '图片不能超过 5MB'
+    imageSizeError: '图片不能超过 5MB',
+    deletePoiTitle: '删除 POI',
+    deletePoiHint: '永久删除该地点和系统托管的地点图片。此操作不可撤销。',
+    deletePoi: '删除 POI',
+    deletePoiMessage: '确定要删除“{name}”吗？删除后该地点将从地图和管理列表移除。',
+    deletePoiSuccess: 'POI 已删除'
   }
   const en = {
     poiImage: 'Place image',
@@ -372,8 +444,16 @@ function localText(key) {
     removeImage: 'Remove image',
     imageHint: 'Each place keeps one image only. Choosing another image replaces the current one. JPG, PNG, WEBP, GIF, up to 5 MB.',
     imageTypeError: 'Only JPG, PNG, WEBP, or GIF images are supported',
-    imageSizeError: 'Image must be 5 MB or smaller'
+    imageSizeError: 'Image must be 5 MB or smaller',
+    deletePoiTitle: 'Delete POI',
+    deletePoiHint: 'Permanently deletes this place and any managed place image. This cannot be undone.',
+    deletePoi: 'Delete POI',
+    deletePoiMessage: 'Delete "{name}"? It will be removed from the map and admin list.',
+    deletePoiSuccess: 'POI deleted'
   }
-  return (locale.value === 'en-US' ? en : zh)[key]
+  const text = (locale.value === 'en-US' ? en : zh)[key] || key
+  return Object.entries(params).reduce((value, [name, replacement]) => {
+    return value.replaceAll(`{${name}}`, replacement)
+  }, text)
 }
 </script>

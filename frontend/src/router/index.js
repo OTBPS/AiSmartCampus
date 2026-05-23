@@ -18,6 +18,7 @@ const routes = [
   { path: '/login', component: LoginView, meta: { public: true } },
   { path: '/map-chat', component: MapChatView },
   { path: '/weather', component: WeatherView },
+  { path: '/poi-search', component: AdminPoisView, props: { readOnly: true } },
   { path: '/discover', component: DiscoverView },
   { path: '/discover/:id', component: DiscoverDetailView },
   { path: '/profile', component: ProfileView },

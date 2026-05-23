@@ -13,6 +13,7 @@
         <p class="nav-section-title">{{ $t('nav.user') }}</p>
         <RouterLink class="nav-link nav-link-map" to="/map-chat"><MapLocation />{{ $t('nav.map') }}</RouterLink>
         <RouterLink class="nav-link" to="/weather"><Sunny />{{ $t('nav.weather') }}</RouterLink>
+        <RouterLink class="nav-link" to="/poi-search"><Location />{{ $t('nav.poiSearch') }}</RouterLink>
         <RouterLink class="nav-link" to="/discover"><Collection />{{ $t('nav.discover') }}</RouterLink>
         <RouterLink class="nav-link" to="/profile"><User />{{ $t('nav.profile') }}</RouterLink>
       </div>

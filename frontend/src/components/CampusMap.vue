@@ -1,6 +1,15 @@
 <template>
-  <section class="map-shell" :aria-label="$t('nav.map')" @click="closeContextMenu">
+  <section class="map-shell" :class="{ 'has-fallback': amapFallbackReason }" :aria-label="$t('nav.map')" @click="closeContextMenu">
     <div ref="amapContainer" class="map-placeholder" :class="{ active: amapReady }"></div>
+    <button
+      class="map-reset-button"
+      type="button"
+      :aria-label="resetMapText"
+      :title="resetMapText"
+      @click.stop="handleResetClick"
+    >
+      <el-icon><ArrowLeft /></el-icon>
+    </button>
     <div v-if="amapFallbackReason" class="map-fallback-badge">{{ amapFallbackReason }}</div>
     <button
       class="map-location-status"
@@ -18,7 +27,17 @@
       <svg v-if="routeLines.length" class="route-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <line
           v-for="line in routeLines"
-          :key="line.key"
+          :key="`${line.key}-outline`"
+          class="route-overlay-outline"
+          :x1="line.from.x"
+          :y1="line.from.y"
+          :x2="line.to.x"
+          :y2="line.to.y"
+        />
+        <line
+          v-for="line in routeLines"
+          :key="`${line.key}-main`"
+          class="route-overlay-main"
           :x1="line.from.x"
           :y1="line.from.y"
           :x2="line.to.x"
@@ -100,7 +119,7 @@ const props = defineProps({
   locationMessage: { type: String, default: '' }
 })
 
-const emit = defineEmits(['select', 'route-context', 'locate-current'])
+const emit = defineEmits(['select', 'route-context', 'locate-current', 'reset'])
 const { locale } = useI18n()
 const amapContainer = ref(null)
 const amapReady = ref(false)
@@ -108,45 +127,51 @@ const amapFallbackReason = ref('')
 const contextMenu = ref(null)
 let map
 let AMapRef
-let routePlanner
-let fallbackRouteLine
-let startMarker
-let endMarker
 let routePlanners = []
-let fallbackRouteLines = []
+let routePolylines = []
 let routePointMarkers = []
 let markers = []
 let currentLocationMarker
+let routeRenderToken = 0
+
+const CAMPUS_CENTER = {
+  longitude: 118.716754326447301,
+  latitude: 32.204393737035566
+}
+const CAMPUS_RENDER_RADIUS_KM = 5
+const EARTH_RADIUS_KM = 6371
+const KM_PER_LAT_DEGREE = 110.574
+const KM_PER_LNG_DEGREE_AT_CAMPUS = 111.32 * Math.cos((CAMPUS_CENTER.latitude * Math.PI) / 180)
+const CAMPUS_RENDER_BOUNDS = {
+  minLng: CAMPUS_CENTER.longitude - CAMPUS_RENDER_RADIUS_KM / KM_PER_LNG_DEGREE_AT_CAMPUS,
+  maxLng: CAMPUS_CENTER.longitude + CAMPUS_RENDER_RADIUS_KM / KM_PER_LNG_DEGREE_AT_CAMPUS,
+  minLat: CAMPUS_CENTER.latitude - CAMPUS_RENDER_RADIUS_KM / KM_PER_LAT_DEGREE,
+  maxLat: CAMPUS_CENTER.latitude + CAMPUS_RENDER_RADIUS_KM / KM_PER_LAT_DEGREE
+}
 
 const normalizationBounds = computed(() => {
   const points = [
-    ...props.pois.filter((poi) => isValidCoordinate(poi)),
+    ...props.pois.filter((poi) => isRenderableCoordinate(poi)),
     props.currentLocation,
     rawRouteStartPoint()
-  ].filter((point) => isValidCoordinate(point))
+  ].filter((point) => isRenderableCoordinate(point))
   if (!points.length) return null
-  const lngs = points.map((point) => Number(point.longitude))
-  const lats = points.map((point) => Number(point.latitude))
-  return {
-    minLng: Math.min(...lngs),
-    maxLng: Math.max(...lngs),
-    minLat: Math.min(...lats),
-    maxLat: Math.max(...lats)
-  }
+  return CAMPUS_RENDER_BOUNDS
 })
 
 const normalizedPois = computed(() => props.pois
-  .filter((poi) => isValidCoordinate(poi))
+  .filter((poi) => isRenderableCoordinate(poi))
   .map((poi) => normalizeFallbackPoint(poi))
   .filter(Boolean))
 
 const normalizedCurrentLocation = computed(() => {
-  if (!isValidCoordinate(props.currentLocation)) return null
+  if (!isRenderableCoordinate(props.currentLocation)) return null
   return normalizeFallbackPoint(currentLocationPoint(props.currentLocation))
 })
 
 const currentLocationLabel = computed(() => props.currentLocation?.label || (locale.value === 'en-US' ? 'Current location' : '\u5f53\u524d\u4f4d\u7f6e'))
 const locationCanRetry = computed(() => ['denied', 'error', 'unsupported', 'idle'].includes(props.locationStatus))
+const resetMapText = computed(() => (locale.value === 'en-US' ? 'Reset map view' : '返回初始地图'))
 const locationStatusClass = computed(() => ({
   success: props.locationStatus === 'success',
   locating: props.locationStatus === 'locating',
@@ -224,14 +249,15 @@ function initAmap() {
   if (!AMapRef || !amapContainer.value) return
   amapReady.value = true
   amapFallbackReason.value = ''
-  const center = props.pois.find((poi) => isValidCoordinate(poi))
   map = new AMapRef.Map(amapContainer.value, {
-    zoom: 17,
-    center: center ? poiLngLat(center) : [113.9345, 22.5331],
+    zoom: 15,
+    zooms: [15, 20],
+    center: poiLngLat(CAMPUS_CENTER),
     viewMode: '2D',
     resizeEnable: true,
     mapStyle: 'amap://styles/normal'
   })
+  applyMapLimitBounds()
   map.on('click', closeContextMenu)
   if (AMapRef.Scale) map.addControl(new AMapRef.Scale())
   if (AMapRef.ToolBar) map.addControl(new AMapRef.ToolBar({ position: 'RT' }))
@@ -247,7 +273,7 @@ function renderMarkers() {
     currentLocationMarker.setMap(null)
     currentLocationMarker = null
   }
-  markers = props.pois.filter((poi) => isValidCoordinate(poi)).map((poi) => {
+  markers = props.pois.filter((poi) => isRenderableCoordinate(poi)).map((poi) => {
     const marker = new AMapRef.Marker({
       position: poiLngLat(poi),
       title: poi.name,
@@ -266,7 +292,7 @@ function renderMarkers() {
 }
 
 function renderCurrentLocationMarker() {
-  if (!map || !AMapRef || !isValidCoordinate(props.currentLocation)) return
+  if (!map || !AMapRef || !isRenderableCoordinate(props.currentLocation)) return
   currentLocationMarker = new AMapRef.Marker({
     position: poiLngLat(props.currentLocation),
     title: currentLocationLabel.value,
@@ -281,44 +307,16 @@ function renderRoute() {
   clearRoute()
   const routePois = routePoisByAction()
   if (!map || !AMapRef || routePois.length < 2) return
-  renderSegmentedRoute(routePois)
-  return
-  const from = poiLngLat(routePois[0])
-  const to = poiLngLat(routePois[routePois.length - 1])
-
-  startMarker = new AMapRef.Marker({
-    position: from,
-    anchor: 'bottom-center',
-    content: endpointContent(locale.value === 'en-US' ? 'Start' : '起点', 'start')
-  })
-  endMarker = new AMapRef.Marker({
-    position: to,
-    anchor: 'bottom-center',
-    content: endpointContent(locale.value === 'en-US' ? 'End' : '终点', 'end')
-  })
-  startMarker.setMap(map)
-  endMarker.setMap(map)
-
-  const RoutePlanner = routePlannerCtor()
-  if (RoutePlanner) {
-    routePlanner = new RoutePlanner(routePlannerOptions())
-    routePlanner.search(from, to, (status) => {
-      if (status !== 'complete') drawFallbackRoute(from, to)
-      focusRoute()
-    })
-    return
-  }
-
-  drawFallbackRoute(from, to)
-  focusRoute()
+  renderSegmentedRoute(routePois, routeRenderToken)
 }
 
-function renderSegmentedRoute(routePois) {
+function renderSegmentedRoute(routePois, token) {
   const RoutePlanner = routePlannerCtor()
   routePois.forEach((poi, index) => {
     const marker = new AMapRef.Marker({
       position: poiLngLat(poi),
       anchor: 'bottom-center',
+      zIndex: 130,
       content: endpointContent(
         routePointLabel(index, routePois.length, poi),
         index === 0 ? 'start' : index === routePois.length - 1 ? 'end' : 'waypoint',
@@ -335,8 +333,14 @@ function renderSegmentedRoute(routePois) {
     if (RoutePlanner) {
       const segment = new RoutePlanner(routePlannerOptions())
       routePlanners.push(segment)
-      segment.search(from, to, (status) => {
-        if (status !== 'complete') drawFallbackRoute(from, to)
+      segment.search(from, to, (status, result) => {
+        if (token !== routeRenderToken) return
+        const path = status === 'complete' ? extractRoutePath(result) : []
+        if (path.length >= 2) {
+          drawHighlightedRoute(path)
+        } else {
+          drawFallbackRoute(from, to)
+        }
         focusRoute()
       })
       return
@@ -354,62 +358,97 @@ function routePlannerCtor() {
 
 function routePlannerOptions() {
   return {
-    map,
     hideMarkers: true,
     autoFitView: false
   }
 }
 
 function drawFallbackRoute(from, to) {
+  drawHighlightedRoute([from, to], true)
+}
+
+function drawHighlightedRoute(path, fallback = false) {
   if (!AMapRef?.Polyline) return
-  fallbackRouteLine = new AMapRef.Polyline({
-    path: [from, to],
-    strokeColor: props.routeMode === 'cycling' ? '#2563eb' : '#0f766e',
-    strokeOpacity: 0.9,
-    strokeWeight: 7,
-    strokeStyle: 'dashed',
+  const visiblePath = path.filter((point) => isLngLatInCampusRenderArea(point))
+  if (visiblePath.length < 2) return
+  const outline = new AMapRef.Polyline({
+    path: visiblePath,
+    strokeColor: '#ffffff',
+    strokeOpacity: 0.95,
+    strokeWeight: 16.8,
+    strokeStyle: fallback ? 'dashed' : 'solid',
     lineJoin: 'round',
-    zIndex: 80
+    lineCap: 'round',
+    zIndex: 88
   })
-  fallbackRouteLine.setMap(map)
-  fallbackRouteLines.push(fallbackRouteLine)
+  const main = new AMapRef.Polyline({
+    path: visiblePath,
+    strokeColor: '#003b95',
+    strokeOpacity: 1,
+    strokeWeight: 9.6,
+    strokeStyle: fallback ? 'dashed' : 'solid',
+    lineJoin: 'round',
+    lineCap: 'round',
+    showDir: true,
+    zIndex: 89
+  })
+  outline.setMap(map)
+  main.setMap(map)
+  routePolylines.push(outline, main)
+}
+
+function extractRoutePath(result) {
+  const route = result?.routes?.[0]
+  const directPath = (route?.path || []).map(toLngLat).filter(Boolean)
+  if (directPath.length >= 2) return directPath
+  const steps = route?.steps || route?.rides || []
+  return steps
+    .flatMap((step) => step?.path || [])
+    .map(toLngLat)
+    .filter(Boolean)
+}
+
+function toLngLat(point) {
+  if (!point) return null
+  if (Array.isArray(point) && point.length >= 2) {
+    const lng = Number(point[0])
+    const lat = Number(point[1])
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
+  }
+  const lng = point.lng ?? point.longitude ?? point.getLng?.()
+  const lat = point.lat ?? point.latitude ?? point.getLat?.()
+  if (!Number.isFinite(Number(lng)) || !Number.isFinite(Number(lat))) return null
+  return [Number(lng), Number(lat)]
 }
 
 function clearRoute() {
+  routeRenderToken += 1
   routePlanners.forEach((segment) => {
     if (segment?.clear) segment.clear()
   })
-  fallbackRouteLines.forEach((line) => line.setMap(null))
+  routePolylines.forEach((line) => line.setMap(null))
   routePointMarkers.forEach((marker) => marker.setMap(null))
-  if (routePlanner?.clear) routePlanner.clear()
-  if (fallbackRouteLine) fallbackRouteLine.setMap(null)
-  if (startMarker) startMarker.setMap(null)
-  if (endMarker) endMarker.setMap(null)
   routePlanners = []
-  fallbackRouteLines = []
+  routePolylines = []
   routePointMarkers = []
-  routePlanner = null
-  fallbackRouteLine = null
-  startMarker = null
-  endMarker = null
 }
 
 function focusVisiblePois() {
   const activeIds = new Set([...props.highlightedIds, props.selectedPoiId].filter(Boolean))
-  const targetPois = props.pois.filter((poi) => activeIds.has(poi.id) && isValidCoordinate(poi))
+  const targetPois = props.pois.filter((poi) => activeIds.has(poi.id) && isRenderableCoordinate(poi))
   if (targetPois.length) {
     const points = targetPois.map(poiLngLat)
-    if (isValidCoordinate(props.currentLocation)) {
+    if (isRenderableCoordinate(props.currentLocation)) {
       points.push(poiLngLat(props.currentLocation))
     }
     focusLngLats(points)
     return
   }
-  const points = props.pois.filter(isValidCoordinate).map(poiLngLat)
-  if (isValidCoordinate(props.currentLocation)) {
+  const points = props.pois.filter(isRenderableCoordinate).map(poiLngLat)
+  if (isRenderableCoordinate(props.currentLocation)) {
     points.push(poiLngLat(props.currentLocation))
   }
-  if (points.length) focusLngLats(points)
+  focusLngLats(points)
 }
 
 function focusRoute() {
@@ -418,12 +457,17 @@ function focusRoute() {
 }
 
 function focusLngLats(points) {
-  if (!map || !points.length) return
-  if (points.length === 1) {
-    map.setZoomAndCenter(17, points[0])
+  if (!map) return
+  const visiblePoints = points.filter((point) => isLngLatInCampusRenderArea(point))
+  if (!visiblePoints.length) {
+    map.setZoomAndCenter(15, poiLngLat(CAMPUS_CENTER))
     return
   }
-  const overlays = points.map((point) => new AMapRef.Marker({ position: point }))
+  if (visiblePoints.length === 1) {
+    map.setZoomAndCenter(17, visiblePoints[0])
+    return
+  }
+  const overlays = visiblePoints.map((point) => new AMapRef.Marker({ position: point }))
   map.setFitView(overlays, false, [60, 60, 60, 60], 18)
 }
 
@@ -431,7 +475,7 @@ function routePoisByAction() {
   const ids = props.routeAction?.poiIds || []
   const routePois = ids
     .map((id) => props.pois.find((poi) => poi.id === id))
-    .filter((poi) => poi && isValidCoordinate(poi))
+    .filter((poi) => poi && isRenderableCoordinate(poi))
     .map((poi) => normalizedPois.value.find((item) => item.id === poi.id) || poi)
   const start = routeStartPoint()
   const points = start ? [start, ...routePois] : routePois
@@ -446,7 +490,7 @@ function routeStartPoint() {
 
 function rawRouteStartPoint() {
   const point = props.routeAction?.payload?.startPoint
-  if (!isValidCoordinate(point)) return null
+  if (!isRenderableCoordinate(point)) return null
   return currentLocationPoint(point, true)
 }
 
@@ -462,7 +506,7 @@ function currentLocationPoint(source, routeStart = false) {
 
 function normalizeFallbackPoint(point) {
   const bounds = normalizationBounds.value
-  if (!bounds || !isValidCoordinate(point)) return null
+  if (!bounds || !isRenderableCoordinate(point)) return null
   const lngRange = bounds.maxLng - bounds.minLng || 1
   const latRange = bounds.maxLat - bounds.minLat || 1
   return {
@@ -491,6 +535,11 @@ function closeContextMenu() {
   contextMenu.value = null
 }
 
+function handleResetClick() {
+  closeContextMenu()
+  emit('reset')
+}
+
 function emitRouteAction(action) {
   if (!contextMenu.value) return
   emit('route-context', { action, poi: contextMenu.value.poi })
@@ -507,8 +556,44 @@ function isValidCoordinate(poi) {
   return Number.isFinite(lng) && Number.isFinite(lat)
 }
 
+function isRenderableCoordinate(poi) {
+  return isValidCoordinate(poi) && isLngLatInCampusRenderArea([Number(poi.longitude), Number(poi.latitude)])
+}
+
+function isLngLatInCampusRenderArea(point) {
+  const lngLat = toLngLat(point)
+  if (!lngLat) return false
+  return distanceKmFromCampus(lngLat) <= CAMPUS_RENDER_RADIUS_KM
+}
+
+function distanceKmFromCampus(point) {
+  const [lng, lat] = point
+  const lat1 = toRadians(CAMPUS_CENTER.latitude)
+  const lat2 = toRadians(lat)
+  const deltaLat = toRadians(lat - CAMPUS_CENTER.latitude)
+  const deltaLng = toRadians(lng - CAMPUS_CENTER.longitude)
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2
+  return 2 * EARTH_RADIUS_KM * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function toRadians(value) {
+  return (Number(value) * Math.PI) / 180
+}
+
 function poiLngLat(poi) {
   return [Number(poi.longitude), Number(poi.latitude)]
+}
+
+function applyMapLimitBounds() {
+  if (!map?.setLimitBounds || !AMapRef?.Bounds) return
+  const sw = AMapRef.LngLat
+    ? new AMapRef.LngLat(CAMPUS_RENDER_BOUNDS.minLng, CAMPUS_RENDER_BOUNDS.minLat)
+    : [CAMPUS_RENDER_BOUNDS.minLng, CAMPUS_RENDER_BOUNDS.minLat]
+  const ne = AMapRef.LngLat
+    ? new AMapRef.LngLat(CAMPUS_RENDER_BOUNDS.maxLng, CAMPUS_RENDER_BOUNDS.maxLat)
+    : [CAMPUS_RENDER_BOUNDS.maxLng, CAMPUS_RENDER_BOUNDS.maxLat]
+  map.setLimitBounds(new AMapRef.Bounds(sw, ne))
 }
 
 function markerContent(poi) {

@@ -27,9 +27,12 @@ public class DiscoverController {
     }
 
     @GetMapping("/posts")
-    public ApiResponse<List<DiscoverPostResponse>> posts(@RequestParam(defaultValue = "TIME") String sort) {
+    public ApiResponse<List<DiscoverPostResponse>> posts(
+            @RequestParam(defaultValue = "TIME") String sort,
+            @RequestParam(required = false) String keyword
+    ) {
         JwtTokenService.TokenUser user = SecurityUsers.current();
-        return ApiResponse.ok(discoverService.listPublished(sort, user.id()));
+        return ApiResponse.ok(discoverService.listPublished(sort, keyword, user.id()));
     }
 
     @GetMapping("/posts/{id}")

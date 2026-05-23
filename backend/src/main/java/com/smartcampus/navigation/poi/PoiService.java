@@ -15,6 +15,7 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -95,6 +96,15 @@ public class PoiService {
         apply(entity, request);
         poiMapper.updateById(entity);
         return get(id);
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        PoiEntity entity = get(id);
+        int deleted = poiMapper.deleteById(id);
+        if (deleted > 0) {
+            deleteLocalImageIfManaged(entity.imageUrl);
+        }
     }
 
     public PoiEntity updateStatus(Long id, String status, Boolean enabled) {
@@ -269,14 +279,14 @@ public class PoiService {
     }
 
     private void deleteLocalImageIfManaged(String imageUrl) {
-        if (!StringUtils.hasText(imageUrl) || !imageUrl.startsWith("/uploads/")) {
+        String managedPrefix = "/uploads/poi/";
+        if (!StringUtils.hasText(imageUrl) || !imageUrl.startsWith(managedPrefix)) {
             return;
         }
         Path directory = Paths.get(uploadDir).toAbsolutePath().normalize();
-        Path root = directory.getParent() == null ? directory : directory.getParent();
-        String relativePath = imageUrl.substring("/uploads/".length()).replace("/", root.getFileSystem().getSeparator());
-        Path target = root.resolve(relativePath).normalize();
-        if (!target.startsWith(root)) {
+        String filename = imageUrl.substring(managedPrefix.length());
+        Path target = directory.resolve(filename).normalize();
+        if (!target.startsWith(directory)) {
             return;
         }
         try {

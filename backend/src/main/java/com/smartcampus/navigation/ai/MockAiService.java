@@ -168,9 +168,7 @@ public class MockAiService {
         if (pois.isEmpty()) {
             pois = poiService.list(null, "STUDY", null, true).stream().limit(4).toList();
         }
-        AiChatResponse response = base("recommend_place", text(locale,
-                "我已按安静、自习、插座、雨天遮蔽等校园场景标签筛选候选地点，推荐结果已同步到地图。",
-                "I filtered candidate places by campus tags such as quiet study, outlets, and sheltered routes. The recommendations are synced to the map."), pois);
+        AiChatResponse response = base("recommend_place", recommendationReply(locale, normalized), pois);
         response.toolCalls.add(new AiChatResponse.ToolCall("searchPoiByTags", Map.of("tags", tags)));
         response.mapActions.add(highlight(pois));
         if (!pois.isEmpty()) {
@@ -676,7 +674,9 @@ public class MockAiService {
 
     private boolean isRecommendationQuestion(String normalized) {
         return containsAny(normalized, "推荐", "安静", "插座", "自习", "学习", "少淋雨", "淋雨", "遮蔽", "夜间", "雨天友好",
-                "recommend", "quiet", "outlet", "outlets", "study", "sheltered", "rain", "night")
+                "recommend", "quiet", "outlet", "outlets", "study", "sheltered", "rain", "night",
+                "sports", "sport", "gym", "basketball", "football", "soccer", "fitness", "stadium", "field", "court",
+                "dining", "canteen", "restaurant", "food", "dinner", "lunch", "breakfast", "meal", "cuisine")
                 || isWhereShouldGoQuestion(normalized)
                 || isShoppingNeedQuestion(normalized);
     }
@@ -704,7 +704,7 @@ public class MockAiService {
 
     private boolean mentionsCurrentLocation(String normalized) {
         return containsAny(normalized,
-                "currentlocation", "mylocation", "myposition", "fromhere",
+                "currentlocation", "currentposition", "mylocation", "myposition", "fromhere",
                 "\u5f53\u524d\u4f4d\u7f6e", "\u6211\u7684\u4f4d\u7f6e", "\u6211\u73b0\u5728\u7684\u4f4d\u7f6e", "\u6211\u8fd9\u91cc");
     }
 
@@ -788,7 +788,8 @@ public class MockAiService {
         if (containsAny(normalized, "library", "study", "quiet", "\u56fe\u4e66\u9986", "\u81ea\u4e60", "\u5b66\u4e60")) {
             return "STUDY";
         }
-        if (containsAny(normalized, "gym", "sports", "basketball", "fitness", "\u4f53\u80b2", "\u8fd0\u52a8", "\u7bee\u7403")) {
+        if (containsAny(normalized, "gym", "sports", "sport", "basketball", "football", "soccer", "fitness", "stadium", "field", "court",
+                "\u4f53\u80b2", "\u8fd0\u52a8", "\u7bee\u7403")) {
             return "SPORTS";
         }
         if (containsAny(normalized, "dorm", "dormitory", "\u5bbf\u820d")) {
@@ -815,7 +816,7 @@ public class MockAiService {
         return switch (category) {
             case "DINING" -> containsAny(text, "dining", "canteen", "restaurant", "food", "cafe");
             case "STUDY" -> containsAny(text, "study", "library", "quiet");
-            case "SPORTS" -> containsAny(text, "sports", "gym", "basketball", "fitness");
+            case "SPORTS" -> containsAny(text, "sports", "gym", "basketball", "football", "soccer", "fitness", "stadium", "field", "court", "track");
             case "DORM" -> containsAny(text, "dorm", "dormitory");
             case "TEACHING" -> containsAny(text, "teaching", "classroom", "building");
             case "SERVICE" -> containsAny(text, "service", "print", "shop", "supermarket", "atm", "bank");
@@ -865,8 +866,24 @@ public class MockAiService {
         if (normalized.contains("打印") || normalized.contains("print")) {
             tags.add("print");
         }
-        if (normalized.contains("食堂") || normalized.contains("吃饭") || normalized.contains("dining") || normalized.contains("canteen")) {
+        if (containsAny(normalized, "食堂", "吃饭", "dining", "canteen", "restaurant", "food", "dinner", "lunch", "breakfast", "meal", "cuisine")) {
             tags.add("dining");
+            tags.add("canteen");
+            if (containsAny(normalized, "dinner", "lunch", "breakfast")) {
+                tags.add("dinner");
+            }
+        }
+        if (containsAny(normalized, "sports", "sport", "gym", "basketball", "football", "soccer", "fitness", "stadium", "field", "court",
+                "\u4f53\u80b2", "\u8fd0\u52a8", "\u7bee\u7403")) {
+            tags.add("sports");
+            if (containsAny(normalized, "basketball", "\u7bee\u7403")) {
+                tags.add("basketball");
+                tags.add("court");
+            }
+            if (containsAny(normalized, "football", "soccer", "field", "stadium")) {
+                tags.add("field");
+                tags.add("stadium");
+            }
         }
         if (isShoppingNeedQuestion(normalized)) {
             tags.add("supermarket");
@@ -904,7 +921,47 @@ public class MockAiService {
         if (isShoppingNeedQuestion(normalized) && containsAny(text, "supermarket", "shopping", "daily-life")) {
             score += 2;
         }
+        if (isSportsNeedQuestion(normalized) && "SPORTS".equals(poi.category)) {
+            score += 2;
+        }
+        if (containsAny(normalized, "basketball", "\u7bee\u7403") && containsAny(text, "basketball", "court", "gym")) {
+            score += 2;
+        }
+        if (containsAny(normalized, "football", "soccer") && containsAny(text, "field", "stadium", "sports", "track")) {
+            score += 2;
+        }
+        if (isDiningNeedQuestion(normalized) && "DINING".equals(poi.category)) {
+            score += 2;
+        }
         return score;
+    }
+
+    private String recommendationReply(String locale, String normalized) {
+        if (isSportsNeedQuestion(normalized)) {
+            return text(locale,
+                    "\u5df2\u6309\u8fd0\u52a8\u3001\u7403\u573a\u548c\u4f53\u80b2\u8bbe\u65bd\u6807\u7b7e\u7b5b\u9009\u5730\u70b9\uff0c\u5e76\u5df2\u540c\u6b65\u5230\u5730\u56fe\u3002",
+                    "I found campus sports places that match your activity request and highlighted them on the map.");
+        }
+        if (isDiningNeedQuestion(normalized)) {
+            return text(locale,
+                    "\u5df2\u6309\u9910\u996e\u548c\u98df\u5802\u573a\u666f\u7b5b\u9009\u5730\u70b9\uff0c\u5e76\u5df2\u540c\u6b65\u5230\u5730\u56fe\u3002",
+                    "I found campus dining options that match your request and highlighted them on the map.");
+        }
+        return text(locale,
+                "\u5df2\u6309\u6821\u56ed\u573a\u666f\u6807\u7b7e\u7b5b\u9009\u5019\u9009\u5730\u70b9\uff0c\u63a8\u8350\u7ed3\u679c\u5df2\u540c\u6b65\u5230\u5730\u56fe\u3002",
+                "I filtered candidate places by campus scenario tags. The recommendations are synced to the map.");
+    }
+
+    private boolean isSportsNeedQuestion(String normalized) {
+        return containsAny(normalized,
+                "sports", "sport", "gym", "basketball", "football", "soccer", "fitness", "stadium", "field", "court",
+                "\u4f53\u80b2", "\u8fd0\u52a8", "\u7bee\u7403");
+    }
+
+    private boolean isDiningNeedQuestion(String normalized) {
+        return containsAny(normalized,
+                "dining", "canteen", "restaurant", "food", "dinner", "lunch", "breakfast", "meal", "cuisine",
+                "\u98df\u5802", "\u9910\u5385", "\u5403\u996d");
     }
 
     private List<PoiEntity> matchPoisInMessage(String message, List<PoiEntity> candidates) {

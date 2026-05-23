@@ -113,6 +113,38 @@ class MockAiServiceTest {
     }
 
     @Test
+    void sportsActivityRequestHighlightsSportsPois() {
+        PoiEntity library = poi(1L, "NUIST Library Study Area", "STUDY", "library,quiet,study", true);
+        PoiEntity courts = poi(91L, "Central Basketball Courts", "SPORTS", "sports,basketball,court,fitness", false);
+        PoiEntity gym = poi(19L, "NUIST Gymnasium", "SPORTS", "sports,gym,basketball,fitness,night-access", false);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(library, gym, courts));
+
+        AiChatResponse response = service(poiService).preview("i want to find a place that can play basketball", "en-US");
+
+        assertEquals("recommend_place", response.intent);
+        assertEquals(List.of(courts, gym), response.pois);
+        assertEquals(List.of(91L, 19L), response.mapActions.get(0).poiIds);
+        assertEquals(91L, response.mapActions.get(1).poiId);
+    }
+
+    @Test
+    void dinnerRequestHighlightsDiningPois() {
+        PoiEntity library = poi(1L, "NUIST Library Study Area", "STUDY", "library,quiet,study", true);
+        PoiEntity canteen = poi(12L, "Eastern Campus Canteen", "DINING", "canteen,dining,dinner", true);
+        PoiEntity cafe = poi(69L, "Campus Cafe", "DINING", "cafe,dining,food", true);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(library, cafe, canteen));
+
+        AiChatResponse response = service(poiService).preview("i want to find a place to enjoy dinner", "en-US");
+
+        assertEquals("recommend_place", response.intent);
+        assertEquals(List.of(canteen, cafe), response.pois);
+        assertEquals(List.of(12L, 69L), response.mapActions.get(0).poiIds);
+        assertEquals(12L, response.mapActions.get(1).poiId);
+    }
+
+    @Test
     void chineseShoppingNeedRecommendsSupermarkets() {
         PoiEntity central = poi(73L, "Campus Supermarket Central", "SERVICE", "supermarket,shopping,service,daily-life", true);
         PoiEntity xiyuan = poi(74L, "Xiyuan Supermarket", "SERVICE", "supermarket,shopping,xiyuan,west-garden,service", true);
@@ -310,6 +342,30 @@ class MockAiServiceTest {
 
         AiChatResponse response = service(poiService).preview(
                 "Go from current location to NUIST Library Study Area",
+                "en-US",
+                currentLocationContext(118.7100, 32.2000)
+        );
+
+        assertEquals("route_help", response.intent);
+        assertEquals(List.of(library), response.pois);
+        assertEquals("planCampusRouteFromCurrentLocation", response.toolCalls.get(0).tool);
+        assertEquals(List.of(1L), response.mapActions.get(0).poiIds);
+        assertEquals("current_location", response.mapActions.get(0).payload.get("source"));
+        Map<?, ?> startPoint = (Map<?, ?>) response.mapActions.get(0).payload.get("startPoint");
+        assertEquals(118.7100, startPoint.get("longitude"));
+        assertEquals(32.2000, startPoint.get("latitude"));
+    }
+
+    @Test
+    void currentPositionRouteUsesCurrentLocationInsteadOfFallbackPois() {
+        PoiEntity dining = poiWithCoordinate(10L, "Faculty Dining Hall", "DINING", "dining,canteen", true, 118.7210, 32.2050);
+        PoiEntity dongyuan = poiWithCoordinate(68L, "Dongyuan Dining Hall", "DINING", "dining,canteen,dongyuan", true, 118.7197, 32.2064);
+        PoiEntity library = poiWithCoordinate(1L, "NUIST Library Study Area", "STUDY", "library,quiet,study", true, 118.7134, 32.2030);
+        PoiService poiService = mock(PoiService.class);
+        when(poiService.list(eq(null), eq(null), eq(null), eq(true))).thenReturn(List.of(dining, dongyuan, library));
+
+        AiChatResponse response = service(poiService).preview(
+                "i want to go from current position to library",
                 "en-US",
                 currentLocationContext(118.7100, 32.2000)
         );

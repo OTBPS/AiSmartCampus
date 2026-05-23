@@ -51,6 +51,12 @@ public class PoiController {
         return ApiResponse.ok(poiService.update(id, request));
     }
 
+    @DeleteMapping("/admin/{id}")
+    public ApiResponse<Boolean> delete(@PathVariable Long id) {
+        poiService.delete(id);
+        return ApiResponse.ok(true);
+    }
+
     @PutMapping("/admin/{id}/status")
     public ApiResponse<PoiEntity> updateStatus(@PathVariable Long id, @RequestBody PoiStatusRequest request) {
         return ApiResponse.ok(poiService.updateStatus(id, request.openStatus, request.enabled));
