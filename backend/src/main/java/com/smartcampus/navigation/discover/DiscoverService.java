@@ -81,10 +81,14 @@ public class DiscoverService {
     }
 
     public List<DiscoverPostResponse> listPublished(String sort, Long userId) {
-        return listPublished(sort, null, userId);
+        return listPublished(sort, null, null, userId);
     }
 
     public List<DiscoverPostResponse> listPublished(String sort, String keyword, Long userId) {
+        return listPublished(sort, keyword, null, userId);
+    }
+
+    public List<DiscoverPostResponse> listPublished(String sort, String keyword, String poiKeyword, Long userId) {
         QueryWrapper<DiscoverPostEntity> query = new QueryWrapper<DiscoverPostEntity>()
                 .eq("status", "PUBLISHED");
         if (StringUtils.hasText(keyword)) {
@@ -95,6 +99,12 @@ public class DiscoverService {
                 ).stream()
                 .map(post -> toResponse(post, userId, false))
                 .toList();
+        if (StringUtils.hasText(poiKeyword)) {
+            String normalizedPoiKeyword = normalizeSearchText(poiKeyword);
+            responses = responses.stream()
+                    .filter(post -> normalizeSearchText(post.poiName).contains(normalizedPoiKeyword))
+                    .toList();
+        }
         if ("LIKES".equals(normalizeSort(sort))) {
             return responses.stream()
                     .sorted(Comparator.comparingLong((DiscoverPostResponse post) -> post.likeCount).reversed()

@@ -21,6 +21,20 @@
               </el-button>
             </template>
           </el-input>
+          <el-input
+            v-model="poiKeyword"
+            class="discover-search-input"
+            clearable
+            :placeholder="localText('placeSearchPlaceholder')"
+            @keyup.enter="load"
+            @clear="load"
+          >
+            <template #append>
+              <el-button :aria-label="localText('search')" @click="load">
+                <el-icon><Search /></el-icon>
+              </el-button>
+            </template>
+          </el-input>
           <el-radio-group v-model="sortMode" @change="load">
             <el-radio-button value="TIME">{{ localText('sortTime') }}</el-radio-button>
             <el-radio-button value="LIKES">{{ localText('sortLikes') }}</el-radio-button>
@@ -106,18 +120,23 @@ const router = useRouter()
 const posts = ref([])
 const sortMode = ref('TIME')
 const keyword = ref('')
+const poiKeyword = ref('')
 const editorVisible = ref(false)
 const trimmedKeyword = computed(() => keyword.value.trim())
-const emptyDescription = computed(() => trimmedKeyword.value ? localText('emptySearch') : localText('empty'))
+const trimmedPoiKeyword = computed(() => poiKeyword.value.trim())
+const hasActiveSearch = computed(() => Boolean(trimmedKeyword.value || trimmedPoiKeyword.value))
+const emptyDescription = computed(() => hasActiveSearch.value ? localText('emptySearch') : localText('empty'))
 
 onMounted(load)
 
 async function load() {
   const searchKeyword = trimmedKeyword.value
+  const searchPoiKeyword = trimmedPoiKeyword.value
   const params = { sort: sortMode.value }
   if (searchKeyword) params.keyword = searchKeyword
+  if (searchPoiKeyword) params.poiKeyword = searchPoiKeyword
   const results = await discoverApi.posts(params)
-  posts.value = searchKeyword ? filterPostsByTitle(results, searchKeyword) : results
+  posts.value = filterPostsForSearch(results, searchKeyword, searchPoiKeyword)
 }
 
 function openCreate() {
@@ -170,9 +189,14 @@ function formatTime(value) {
   return date.toLocaleDateString(locale.value === 'en-US' ? 'en-US' : 'zh-CN', { month: 'short', day: 'numeric' })
 }
 
-function filterPostsByTitle(items, searchKeyword) {
-  const normalizedKeyword = normalizeSearchText(searchKeyword)
-  return items.filter((post) => normalizeSearchText(post.title).includes(normalizedKeyword))
+function filterPostsForSearch(items, searchKeyword, searchPoiKeyword) {
+  const normalizedTitleKeyword = normalizeSearchText(searchKeyword)
+  const normalizedPoiKeyword = normalizeSearchText(searchPoiKeyword)
+  return items.filter((post) => {
+    const matchesTitle = !normalizedTitleKeyword || normalizeSearchText(post.title).includes(normalizedTitleKeyword)
+    const matchesPoi = !normalizedPoiKeyword || normalizeSearchText(post.poiName).includes(normalizedPoiKeyword)
+    return matchesTitle && matchesPoi
+  })
 }
 
 function normalizeSearchText(value) {
@@ -185,24 +209,26 @@ function localText(key) {
     sortLikes: '按喜欢',
     search: '搜索',
     searchPlaceholder: '按标题搜索 notes',
+    placeSearchPlaceholder: '按地点搜索',
     create: '发布 note',
     unknownPlace: '未知地点',
     like: '喜欢',
     favorite: '收藏',
     empty: '暂无发现 note',
-    emptySearch: '没有匹配标题的 note'
+    emptySearch: '没有匹配条件的 note'
   }
   const en = {
     sortTime: 'Latest',
     sortLikes: 'Most liked',
     search: 'Search',
     searchPlaceholder: 'Search notes by title',
+    placeSearchPlaceholder: 'Search by place',
     create: 'Create note',
     unknownPlace: 'Unknown place',
     like: 'Like',
     favorite: 'Save',
     empty: 'No discover notes yet',
-    emptySearch: 'No notes match that title'
+    emptySearch: 'No notes match those filters'
   }
   return (locale.value === 'en-US' ? en : zh)[key] || key
 }

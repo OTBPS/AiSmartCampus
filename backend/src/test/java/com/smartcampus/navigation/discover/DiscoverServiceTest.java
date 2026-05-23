@@ -66,6 +66,22 @@ class DiscoverServiceTest {
     }
 
     @Test
+    void listPublishedFiltersByPoiKeyword() {
+        TestContext ctx = new TestContext();
+        DiscoverPostEntity library = post(1L, 7L);
+        DiscoverPostEntity canteen = post(2L, 7L);
+        canteen.poiId = 10L;
+        when(ctx.poiMapper.selectById(10L)).thenReturn(poi(10L, "Eastern Campus Canteen", "DINING", "canteen,dining"));
+        when(ctx.postMapper.selectList(any())).thenReturn(List.of(library, canteen));
+        ctx.stubCounts();
+
+        List<DiscoverPostResponse> posts = ctx.service().listPublished("TIME", null, " canteen ", 7L);
+
+        assertEquals(List.of(2L), posts.stream().map(post -> post.id).toList());
+        assertEquals("Eastern Campus Canteen", posts.get(0).poiName);
+    }
+
+    @Test
     void searchPublishedNotesMatchesPoiAliasesSortsByLikesAndLimits() {
         TestContext ctx = new TestContext();
         List<DiscoverPostEntity> posts = List.of(

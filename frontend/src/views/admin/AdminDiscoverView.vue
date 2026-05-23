@@ -8,7 +8,23 @@
     </div>
 
     <section class="table-panel">
-      <el-table :data="posts" height="620">
+      <div class="admin-filter-bar">
+        <el-input
+          v-model="filters.title"
+          clearable
+          :placeholder="localText('titleSearchPlaceholder')"
+          style="max-width: 300px"
+        />
+        <el-input
+          v-model="filters.poi"
+          clearable
+          :placeholder="localText('poiSearchPlaceholder')"
+          style="max-width: 260px"
+        />
+        <span class="filter-count">{{ $t('common.itemsCount', { current: filteredPosts.length, total: posts.length }) }}</span>
+      </div>
+
+      <el-table :data="filteredPosts" height="620">
         <el-table-column prop="title" :label="$t('common.title')" min-width="220" />
         <el-table-column :label="localText('images')" width="110">
           <template #default="{ row }">
@@ -43,7 +59,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import AppShell from '../../components/AppShell.vue'
@@ -51,6 +67,20 @@ import { discoverApi } from '../../api/modules'
 
 const { t, locale } = useI18n()
 const posts = ref([])
+const filters = reactive({
+  title: '',
+  poi: ''
+})
+
+const filteredPosts = computed(() => {
+  const titleKeyword = normalizeSearchText(filters.title)
+  const poiKeyword = normalizeSearchText(filters.poi)
+  return posts.value.filter((post) => {
+    const matchesTitle = !titleKeyword || normalizeSearchText(post.title).includes(titleKeyword)
+    const matchesPoi = !poiKeyword || normalizeSearchText(post.poiName).includes(poiKeyword)
+    return matchesTitle && matchesPoi
+  })
+})
 
 onMounted(load)
 
@@ -84,11 +114,17 @@ function postCover(post) {
   return post.images?.[0]?.imageUrl || post.coverUrl || ''
 }
 
+function normalizeSearchText(value) {
+  return `${value || ''}`.toLowerCase().replace(/\s+/g, '')
+}
+
 function localText(key) {
   const zh = {
     author: '作者',
     images: '图片',
     stats: '喜欢/收藏/评论',
+    titleSearchPlaceholder: '按标题关键词搜索',
+    poiSearchPlaceholder: '按地点搜索',
     view: '查看',
     delete: '删除',
     deleteTitle: '删除 note',
@@ -99,6 +135,8 @@ function localText(key) {
     author: 'Author',
     images: 'Images',
     stats: 'Likes/Saves/Comments',
+    titleSearchPlaceholder: 'Search title keywords',
+    poiSearchPlaceholder: 'Search related POI',
     view: 'View',
     delete: 'Delete',
     deleteTitle: 'Delete note',
